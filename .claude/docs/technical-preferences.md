@@ -5,43 +5,55 @@
 
 ## Engine & Language
 
-- **Engine**: [TO BE CONFIGURED — run /setup-engine]
-- **Language**: [TO BE CONFIGURED]
-- **Rendering**: [TO BE CONFIGURED]
-- **Physics**: [TO BE CONFIGURED]
+- **Engine**: Godot 4.6.2
+- **Language**: GDScript (primary — gameplay, UI), C# (performance-critical systems), C++ via GDExtension (native only)
+- **Rendering**: Forward+ (desktop) — default for Godot 4.6 on Windows
+- **Physics**: Jolt (default in 4.6)
 
 ## Input & Platform
 
 <!-- Written by /setup-engine. Read by /ux-design, /ux-review, /test-setup, /team-ui, and /dev-story -->
 <!-- to scope interaction specs, test helpers, and implementation to the correct input methods. -->
 
-- **Target Platforms**: [TO BE CONFIGURED — e.g., PC, Console, Mobile, Web]
-- **Input Methods**: [TO BE CONFIGURED — e.g., Keyboard/Mouse, Gamepad, Touch, Mixed]
-- **Primary Input**: [TO BE CONFIGURED — the dominant input for this game]
-- **Gamepad Support**: [TO BE CONFIGURED — Full / Partial / None]
-- **Touch Support**: [TO BE CONFIGURED — Full / Partial / None]
-- **Platform Notes**: [TO BE CONFIGURED — any platform-specific UX constraints]
+- **Target Platforms**: PC (Steam / itch)
+- **Input Methods**: Keyboard/Mouse, Gamepad (optional)
+- **Primary Input**: Keyboard/Mouse
+- **Gamepad Support**: Partial (tower placement via cursor; menus gamepad-navigable)
+- **Touch Support**: None
+- **Platform Notes**: PC-only release. No mobile/console UX constraints. Gamepad is a nice-to-have, not a shipping requirement.
 
 ## Naming Conventions
 
-- **Classes**: [TO BE CONFIGURED]
-- **Variables**: [TO BE CONFIGURED]
-- **Signals/Events**: [TO BE CONFIGURED]
-- **Files**: [TO BE CONFIGURED]
-- **Scenes/Prefabs**: [TO BE CONFIGURED]
-- **Constants**: [TO BE CONFIGURED]
+**GDScript (.gd files):**
+- **Classes**: PascalCase (`PlayerController`)
+- **Variables/Functions**: snake_case (`move_speed`, `take_damage()`)
+- **Signals**: snake_case past tense (`health_changed`)
+- **Files**: snake_case matching class (`player_controller.gd`)
+- **Scenes**: PascalCase matching root node (`PlayerController.tscn`)
+- **Constants**: UPPER_SNAKE_CASE (`MAX_HEALTH`)
+
+**C# (.cs files):**
+- **Classes**: PascalCase, must be `partial` (`public partial class PlayerController : Node`)
+- **Public properties/fields**: PascalCase (`MoveSpeed`)
+- **Private fields**: `_camelCase` (`_currentHealth`)
+- **Methods**: PascalCase (`TakeDamage()`)
+- **Signal delegates**: PascalCase + `EventHandler` suffix (`HealthChangedEventHandler`)
+- **Files**: PascalCase matching class (`PlayerController.cs`)
+- **Constants**: PascalCase (`MaxHealth`)
+
+**Cross-language rule:** Prefer signals over direct method calls at the GDScript/C# boundary.
 
 ## Performance Budgets
 
-- **Target Framerate**: [TO BE CONFIGURED]
-- **Frame Budget**: [TO BE CONFIGURED]
-- **Draw Calls**: [TO BE CONFIGURED]
-- **Memory Ceiling**: [TO BE CONFIGURED]
+- **Target Framerate**: 60 fps
+- **Frame Budget**: 16.6 ms
+- **Draw Calls**: ≤ 1500 per frame
+- **Memory Ceiling**: 2 GB RAM total
 
 ## Testing
 
-- **Framework**: [TO BE CONFIGURED]
-- **Minimum Coverage**: [TO BE CONFIGURED]
+- **Framework**: GUT (GDScript tests), GodotXUnit or chickensoft-games/GoDotTest (C# tests) — finalize on first sprint
+- **Minimum Coverage**: Deferred until architecture phase
 - **Required Tests**: Balance formulas, gameplay systems, networking (if applicable)
 
 ## Forbidden Patterns
@@ -65,12 +77,13 @@
 <!-- Read by /code-review, /architecture-decision, /architecture-review, and team skills -->
 <!-- to know which specialist to spawn for engine-specific validation. -->
 
-- **Primary**: [TO BE CONFIGURED — run /setup-engine]
-- **Language/Code Specialist**: [TO BE CONFIGURED]
-- **Shader Specialist**: [TO BE CONFIGURED]
-- **UI Specialist**: [TO BE CONFIGURED]
-- **Additional Specialists**: [TO BE CONFIGURED]
-- **Routing Notes**: [TO BE CONFIGURED]
+- **Primary**: godot-specialist
+- **GDScript Specialist**: godot-gdscript-specialist (.gd files — gameplay/UI scripts)
+- **C# Specialist**: godot-csharp-specialist (.cs files — performance-critical systems)
+- **Shader Specialist**: godot-shader-specialist (.gdshader files, VisualShader resources)
+- **UI Specialist**: godot-specialist (no dedicated UI specialist — primary covers all UI)
+- **Additional Specialists**: godot-gdextension-specialist (GDExtension / native C++ bindings only)
+- **Routing Notes**: Invoke primary for cross-language architecture decisions and which systems belong in which language. Invoke GDScript specialist for .gd files. Invoke C# specialist for .cs files and .csproj management. Prefer signals over direct cross-language method calls at the boundary.
 
 ### File Extension Routing
 
@@ -79,9 +92,12 @@
 
 | File Extension / Type | Specialist to Spawn |
 |-----------------------|---------------------|
-| Game code (primary language) | [TO BE CONFIGURED] |
-| Shader / material files | [TO BE CONFIGURED] |
-| UI / screen files | [TO BE CONFIGURED] |
-| Scene / prefab / level files | [TO BE CONFIGURED] |
-| Native extension / plugin files | [TO BE CONFIGURED] |
-| General architecture review | Primary |
+| Game code (.gd files) | godot-gdscript-specialist |
+| Game code (.cs files) | godot-csharp-specialist |
+| Cross-language boundary decisions | godot-specialist |
+| Shader / material files (.gdshader, VisualShader) | godot-shader-specialist |
+| UI / screen files (Control nodes, CanvasLayer) | godot-specialist |
+| Scene / prefab / level files (.tscn, .tres) | godot-specialist |
+| Project config (.csproj, NuGet) | godot-csharp-specialist |
+| Native extension / plugin files (.gdextension, C++) | godot-gdextension-specialist |
+| General architecture review | godot-specialist |
