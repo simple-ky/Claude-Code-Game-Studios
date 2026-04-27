@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: ""
+last_updated: "2026-04-28"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -43,7 +43,72 @@ last_updated: ""
 # interface: how other systems access this state (read-only property, method call,
 #   signal, shared resource, etc.) — this is the contract other ADRs depend on.
 
-state_ownership: []
+state_ownership:
+  - state: current_state
+    status: active
+    owner_system: game-state-machine
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    interface: "GameStateMachine.current_state (read-only int, GameState enum value 0-8). Write access only via transition_to(), pause(), resume()."
+    write_access: game-state-machine-only
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    revised: ""
+
+  - state: current_wave
+    status: active
+    owner_system: game-state-machine
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    interface: "GameStateMachine.current_wave (read-only int; 0 if not in a run). Updated internally on transition into RUN_PREP for the next wave; published in state_snapshot_ready."
+    write_access: game-state-machine-only
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    revised: ""
+
+  - state: run_seed
+    status: active
+    owner_system: game-state-machine
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    interface: "GameStateMachine.run_seed (read-only int). Set on run_started signal; deterministic RNG seed for the entire run. All gameplay systems requiring randomness must derive their RNG state from this seed (Test Harness, Wave composition, Card-Roll, Loot)."
+    write_access: game-state-machine-only
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    revised: ""
+
+  - state: current_champion_id
+    status: active
+    owner_system: game-state-machine
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    interface: "GameStateMachine.current_champion_id (read-only StringName). Identifies which Champion is selected for the current run. Champion System (12) owns Champion *definitions*; GameStateMachine owns *which one is currently active*."
+    write_access: game-state-machine-only
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    revised: ""
+
+  - state: current_map_id
+    status: active
+    owner_system: game-state-machine
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    interface: "GameStateMachine.current_map_id (read-only StringName). Identifies which Map is selected for the current run. Lane/Map System (7) owns Map *definitions*; GameStateMachine owns *which one is currently active*."
+    write_access: game-state-machine-only
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    revised: ""
+
+  - state: run_started_at
+    status: active
+    owner_system: game-state-machine
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    interface: "GameStateMachine.run_started_at (read-only int, unix timestamp). Set on run_started; 0 if not in a run. Used for elapsed-time computation in snapshot."
+    write_access: game-state-machine-only
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    revised: ""
 
 # Example:
 #
@@ -71,7 +136,158 @@ state_ownership: []
 #
 # pattern options: signal | direct_call | event_bus | shared_resource | rpc | none
 
-interfaces: []
+interfaces:
+  - contract: cross_language_boundary
+    status: active
+    pattern: signal              # C# emits, GDScript connects
+    producer: csharp_hot_path_systems
+    consumers:
+      - gdscript_orchestration_layer
+    adr: docs/architecture/adr-0003-language-routing-policy.md
+    signal_signature: "C# side: [Signal] public delegate void <Name>EventHandler(<typed args>); GDScript side: signal_node.SignalName.connect(_on_signal_name)"
+    reverse_direction: "GDScript→C# only via cached Callable for stateless compute (e.g., BuildModifier.compute_stats); never per-frame node lookup inside hot loops"
+    constraint: "Every crossing incurs Variant marshalling overhead. C# hot-paths emitting >50 times/frame to GDScript MUST batch (see forbidden_patterns: unbatched_csharp_to_gdscript_signal_emission)."
+    referenced_by:
+      - docs/architecture/adr-0003-language-routing-policy.md
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md  # Register/SetTarget/Deregister direct calls + agent_reached_target/path_invalidated signals
+      - docs/architecture/adr-0004-juice-pipeline-integration-model.md  # damage_dealt(HitEvent) C#→GDScript signal subscription
+    added: 2026-04-25
+    revised: ""
+
+  - contract: state_changed
+    status: active
+    pattern: signal
+    producer: game-state-machine
+    consumers:
+      - hud-system           # swaps HUD layout per state
+      - adaptive-music       # swaps music track per state
+      - tutorial-system      # shows context prompts on state_entered
+      - card-roll-ui         # appears on CARD_ROLL entry
+      - wave-summary-ui      # appears on WAVE_RESULTS entry
+      - run-results-ui       # appears on RUN_RESULTS entry
+      - main-menu            # appears on MAIN_MENU entry
+      - test-harness         # asserts deterministic state sequences in headless sims
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    signal_signature: "state_changed(from: int, to: int)  # GameState enum values; emitted by GameStateMachine on every transition (including pause/resume)"
+    constraint: "Connect via typed Callable form ONLY: GameStateMachine.state_changed.connect(_on_state_changed). String-based connect() is forbidden by forbidden_patterns: string_based_signal_connection."
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md  # CrowdManager subscribes to gate _waveActive flag for per-frame velocity update
+      - docs/architecture/adr-0004-juice-pipeline-integration-model.md  # Juice subscribes to abort active hit-stop on RUN_PAUSED entry
+    added: 2026-04-25
+    revised: ""
+
+  - contract: state_snapshot_ready
+    status: active
+    pattern: signal
+    producer: game-state-machine
+    consumers:
+      - save-load-system     # decides which snapshots persist; ADR-006 owns persistence policy
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    signal_signature: "state_snapshot_ready(snapshot: Dictionary)  # JSON-serializable Dictionary with keys: schema_version, state, previous_state, current_wave, champion_id, map_id, run_seed, started_at_unix, elapsed_run_seconds"
+    constraint: "Snapshot fires on EVERY state transition (including pause/resume). Save/Load (ADR-006, pending) owns the policy of which snapshots persist to disk. The Dictionary shape is locked here; schema_version bumps on key changes."
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+      - docs/architecture/adr-0006-save-schema-versioning.md  # owns the on-disk policy for this snapshot Dictionary; run_snapshot.save's top-level schema_version IS this snapshot's schema_version
+    added: 2026-04-25
+    revised: ""
+
+  - contract: wave_complete_cross_language
+    status: active
+    pattern: signal              # C# emits, GDScript connects
+    producer: wave-system        # C# hot-path per ADR-0003
+    consumers:
+      - game-state-machine       # GDScript autoload; transitions WAVE_ACTIVE → WAVE_RESULTS
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    signal_signature: "C# side: [Signal] public delegate void WaveCompleteEventHandler(int waveNumber, WavePerformance performance); GDScript side: wave_system.wave_complete.connect(_on_wave_complete)  # snake_case auto-translation per Godot 4.6.2"
+    constraint: "MUST fire EXACTLY ONCE per wave end (not per zombie spawn, not per zombie death, not per frame). Per-frame emission violates forbidden_patterns: unbatched_csharp_to_gdscript_signal_emission. GDScript-side connect() MUST use snake_case `wave_complete`, not PascalCase `WaveComplete` (see forbidden_patterns: csharp_signal_pascalcase_in_gdscript_connect)."
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+      - docs/architecture/adr-0003-language-routing-policy.md  # boundary contract precedent
+    added: 2026-04-25
+    revised: ""
+
+  - contract: agent_reached_target
+    status: active
+    pattern: signal              # C# emits, GDScript connects
+    producer: crowd-manager      # C# autoload per ADR-0002
+    consumers:
+      - zombie-ai                # GDScript; reacts on its own agent reaching its goal
+      - damage-and-health        # may apply player-base damage when zombie reaches goal zone
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    signal_signature: "C# side: [Signal] public delegate void AgentReachedTargetEventHandler(CrowdAgent agent); GDScript side: CrowdManager.agent_reached_target.connect(_on_agent_reached_target)  # snake_case auto-translation"
+    constraint: "Emitted ONCE per agent reaching its goal (not per frame, not per waypoint). Typed CrowdAgent argument requires C# assembly compiled before scene load — otherwise argument silently downgrades to CharacterBody2D. GDScript-side connect() MUST use snake_case `agent_reached_target` (PascalCase form is forbidden by csharp_signal_pascalcase_in_gdscript_connect)."
+    referenced_by:
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-27
+    revised: ""
+
+  - contract: path_invalidated
+    status: active
+    pattern: signal              # C# emits, GDScript connects
+    producer: crowd-manager      # C# autoload per ADR-0002
+    consumers:
+      - test-harness             # asserts path-invalidation correctness in headless sims
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    signal_signature: "C# side: [Signal] public delegate void PathInvalidatedEventHandler(int goalZoneId); GDScript side: CrowdManager.path_invalidated.connect(_on_path_invalidated)  # snake_case auto-translation"
+    constraint: "Emitted ONCE per requery batch after a placement_changed / wall_destroyed / geometry_baked event, AFTER NavigationServer2D.map_changed has fired (ensures rebuilt navmesh, not stale path). Per-event emission is forbidden — multiple events in one frame collapse via CallDeferred."
+    referenced_by:
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-27
+    revised: ""
+
+  - contract: damage_dealt
+    status: active
+    pattern: signal              # C# emits, GDScript connects
+    producer: damage-system      # C# hot-path per ADR-0003
+    consumers:
+      - juice                    # GDScript autoload; orchestrates hit-stop, shake, particles, SFX per JuiceProfile
+      - damage-number            # GDScript; pooled damage numbers (deferred to GDD #35)
+      - test-harness             # asserts damage event count, IsKill correctness in headless sims
+    adr: docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    signal_signature: "C# side: [Signal] public delegate void DamageDealtEventHandler(HitEvent hitEvent); HitEvent : RefCounted with Target/Amount/IsKill/IsCrit/IsBoss/ProfileId/ImpactPosition/ImpactDirection. GDScript side: DamageSystem.damage_dealt.connect(_on_damage_dealt)  # snake_case auto-translation"
+    constraint: "Emitted ONCE per resolved damage event (not per-frame health update). ≤50 emissions/frame upper bound (per forbidden_pattern: unbatched_csharp_to_gdscript_signal_emission). If any AoE ability exceeds this, contract evolves to damage_dealt_batch(Array[HitEvent]) — single emission per frame. GDScript-side connect() MUST use snake_case `damage_dealt`, not PascalCase `DamageDealt` (csharp_signal_pascalcase_in_gdscript_connect). HitEvent property access from GDScript uses PascalCase declared names (hit_event.Amount, hit_event.IsCrit) per csharp_method_snakecase_in_gdscript_call. Runtime guard required: assert(hit_event is HitEvent, ...) catches C#-assembly-not-loaded silent downgrade."
+    referenced_by:
+      - docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    added: 2026-04-27
+    revised: ""
+
+  - contract: save_manager_api
+    status: active
+    pattern: method_call             # synchronous GDScript method invocations
+    producer: save-manager           # GDScript autoload per ADR-0006
+    consumers:
+      - settings                     # writes settings.cfg via SaveManager (ConfigFile under the hood)
+      - meta-progression             # writes meta_progression.save
+      - meta-currency                # writes meta_currency.save
+      - leaderboard                  # writes leaderboard.save
+      - achievements                 # writes achievements.save
+      - save-load                    # writes run_snapshot.save (consumer of ADR-0001 snapshot Dictionary)
+      - test-harness                 # loads fixture saves via the SAME API as production
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    signal_signature: "save_domain(domain: StringName, data: Dictionary) -> bool  AND  load_domain(domain: StringName) -> LoadResult. Domains do NOT manage atomicity, .bak rotation, FileAccess.store_* return checks, the Windows remove-before-rename step, or non-Dictionary parse-result guards — SaveManager owns all of those internally."
+    constraint: "Domains MUST go through SaveManager for ALL user:// I/O. Direct FileAccess writes or reads to user:// from outside SaveManager are forbidden (see forbidden_patterns: direct_save_file_io_outside_save_manager). save_domain() returns true on full success; false on any FileAccess failure (callers should check). load_domain() never throws; callers inspect LoadResult.status."
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    revised: ""
+
+  - contract: save_manager_signals
+    status: active
+    pattern: signal                  # GDScript signals; UI subscribes
+    producer: save-manager           # GDScript autoload per ADR-0006
+    consumers:
+      - hud                          # generic warning surfaces (save_failed)
+      - meta-progression-ui          # HARD subscriber to load_fell_back_to_defaults (ADR-0006 Risk 1)
+      - settings-ui                  # error dialog on load_too_old / load_too_new
+      - run-results-ui               # warning if run snapshot recovered from backup
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    signal_signature: "save_failed(domain: StringName, reason: String); load_recovered_from_backup(domain: StringName); load_fell_back_to_defaults(domain: StringName, preserved_path: String); load_too_old(domain: StringName, file_version: int, supported_min: int); load_too_new(domain: StringName, file_version: int)"
+    constraint: "load_fell_back_to_defaults is a HARD UI contract — meta-progression UI MUST subscribe and render a non-blocking warning so players don't think they lost progress to a bug (ADR-0006 Risk 1). preserved_path is the empty string when no forensic preservation occurred. Acceptance test: simulate corrupt save, assert signal fires, assert warning UI renders."
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    revised: ""
 
 # Example:
 #
@@ -100,7 +316,16 @@ interfaces: []
 # Register a budget when an ADR explicitly claims a frame time allocation.
 # The registry lets /architecture-review verify the total doesn't exceed the target.
 
-performance_budgets: []
+performance_budgets:
+  - system: juice
+    status: active
+    budget_ms: 0.5
+    adr: docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    notes: "Juice dispatch (signal handler + Dictionary profile lookup + Tween creation/teardown + camera shake update + pool slot lookup) at peak load ~10–15 hits/frame. EXCLUDES particle GPU simulation (owned by VFX system budget), SFX synthesis (owned by Audio Bus system budget), and Damage Number rendering (owned by GDD #35 budget)."
+    referenced_by:
+      - docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    added: 2026-04-27
+    revised: ""
 
 # Example:
 #
@@ -131,7 +356,209 @@ performance_budgets: []
 # Register an API decision when the choice is non-obvious and other ADRs might
 # make a different choice for the same purpose without knowing this was decided.
 
-api_decisions: []
+api_decisions:
+  - purpose: hot_path_language
+    status: active
+    api: "C# (.NET 8) for systems meeting hot-path criteria"
+    not: "GDScript for hot-path systems; GDExtension/C++ excluded from MVP and V1"
+    criteria:
+      - ">50 entities per frame in tight numerical loop"
+      - "batch object creation/destruction at known spike points"
+      - "combinatorial math composition exceeding 0.5 ms in profiling"
+    adr: docs/architecture/adr-0003-language-routing-policy.md
+    reason: "Solo-dev iteration speed preserved for ~91% of systems (GDScript); C# buys 5–10× headroom for the 4 flagged hot-path systems (Crowd Pathfinding 11, Damage & Health 13, Wave/Spawn 18, Build/Modifier 23)."
+    referenced_by:
+      - docs/architecture/adr-0003-language-routing-policy.md
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md  # Crowd Pathfinding (11) is the first hot-path system to apply this rule
+    added: 2026-04-25
+    revised: ""
+
+  - purpose: csharp_hotpath_base_class
+    status: active
+    api: "Godot.RefCounted for stateless computation kernels; Godot.Node (or specific subclass) only when scene-tree presence or lifecycle methods are needed"
+    not: "Godot.Node by default for all C# classes"
+    adr: docs/architecture/adr-0003-language-routing-policy.md
+    reason: "Node carries scene-tree overhead per instance — measurable at 100+ entities. RefCounted is the right choice for pure computation (e.g., Build/Modifier math kernel, System 23)."
+    referenced_by:
+      - docs/architecture/adr-0003-language-routing-policy.md
+    added: 2026-04-25
+    revised: ""
+
+  - purpose: state_machine_pattern
+    status: active
+    api: "Single autoload (GameStateMachine) with flat enum + transition validation table; consumers connect to typed signals; read-only state property exposed"
+    not: "Scene-tree-owned StateManager Node; Hierarchical State Machine (HSM) with parent/child state classes; central EventBus autoload aggregating multiple publishers"
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    reason: "13 consumer systems, exactly 1 publisher (Run State itself), solo-dev-friendly. Autoload survives scene transitions naturally; signal-only consumer access keeps the autoload-coupling risk contained. EventBus (decoupling beyond signals) and HSM (nested state classes) are over-engineered for this topology and would slow solo-dev iteration. Future ADRs proposing alternative state-machine patterns must justify against this precedent."
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    revised: ""
+
+  - purpose: pause_implementation
+    status: active
+    api: "Discrete RUN_PAUSED state in GameState enum; previous_state field on GameStateMachine restores prior state on resume; get_tree().paused toggled AFTER all transition signal emissions in pause(), and BEFORE emissions in resume()"
+    not: "Boolean overlay flag (is_paused) on top of an in-run state; pure get_tree().paused with no state-machine awareness; setting get_tree().paused before emitting transition signals"
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    reason: "Discrete state forces consumer pause-handling at the signal handler (no forgotten checks); previous_state is a one-line resume; emission ordering preserves consistent unpaused-tree state for consumer signal handlers (avoids Tween/await-in-paused-tree class of bugs)."
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    revised: ""
+
+  - purpose: pathfinding_api
+    status: active
+    api: "NavigationServer2D.QueryPath() with NavigationPathQueryParameters2D / NavigationPathQueryResult2D, queried in REVERSE (goal → spawn) for per-lane shared path; cached in C# Dictionary<int, Vector2[]> keyed by goal_zone_id"
+    not: "Per-agent NavigationAgent2D + RVO2 (Alternative A — fails at 100+ agents); custom flow-field grid (Alternative B — 300+ lines of custom code, sacrifices arbitrary geometry); AStar2D + custom steering (Alternative D — strictly inferior to NavigationServer2D)"
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    reason: "Godot 4.5+ dedicated 2D nav server made NavigationServer2D queries materially cheaper. Shared per-lane path keeps per-agent cost at O(1) waypoint read while preserving navmesh's correctness on arbitrary lane geometry. Path queries fire only on map-change events (not per frame), so query cost is amortized across an entire wave."
+    referenced_by:
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-27
+    revised: ""
+
+  - purpose: nav_map_acquisition
+    status: active
+    api: "NavigationRegion2D node embedded in the Lane scene; CrowdManager fetches Rid via laneRoot.GetWorld2D().NavigationMap on the LaneSystem.geometry_baked signal; first path query gated on NavigationServer2D.map_changed (bake-complete signal)"
+    not: "Manual NavigationServer2D.MapCreate() + polygon construction from C# (significantly more code); querying before map_changed has fired (returns empty path due to one-frame-deferred bake)"
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    reason: "Designer-authored maps come from the Lane scene; the scene-node approach makes the NavigationPolygon a designer artifact, not a programmatic one. Gating queries on map_changed avoids the one-frame stale-path class of bugs."
+    referenced_by:
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-27
+    revised: ""
+
+  - purpose: csharp_crowd_agent_base_class
+    status: active
+    api: "CrowdAgent : CharacterBody2D (C#, partial class). Zombie scene root = CrowdAgent.cs. Zombie AI lives in zombie_ai.gd as a child Node2D, accessed via `get_parent() as CrowdAgent` with null assert."
+    not: "GDScript root with C# child component (boundary crossings on every Velocity write); Godot.Node base for CrowdAgent (would lose CharacterBody2D physics + MoveAndSlide); single-script-per-zombie-in-GDScript (interpreted hot loop fails the 100-agent target)"
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    reason: "CharacterBody2D is the canonical Godot character physics base. Splitting Velocity writes (CrowdManager, C#) from physics integration (CrowdAgent.MoveAndSlide, C#) keeps the per-frame inner loop entirely in C# with zero boundary crossings. ZombieAI lives in a child Node2D so gameplay scripting stays GDScript-flavored."
+    referenced_by:
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-27
+    revised: ""
+
+  - purpose: csharp_crowd_avoidance
+    status: active
+    api: "Custom separation steering with spatial hash neighbor query in CrowdManager._UpdateVelocities; tuning knobs NeighborRadius and SeparationWeight exposed as [Export] properties"
+    not: "RVO2 via NavigationAgent2D.avoidance_enabled (forces per-agent NavigationAgent2D nodes — see forbidden_patterns: per_agent_navigationagent2d_for_crowd); zero avoidance with CharacterBody2D physics push (visual quality unacceptable at 100 agents)"
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    reason: "Zombies SHOULD clump; RVO2's mathematical optimality is wasted on a horde. Separation is ~0.05ms/agent at 100 agents with spatial hash; RVO2 via per-agent NavigationAgent2D would add per-frame node overhead and force the architecture toward Alternative A. Revisit only if Champion movement (not a CrowdAgent) needs careful single-agent avoidance — Champion is in scope of a separate ADR/GDD."
+    referenced_by:
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-27
+    revised: ""
+
+  - purpose: juice_dispatch_pattern
+    status: active
+    api: "Centralized GDScript autoload (Juice) subscribing to a single batched signal from the canonical event producer (e.g., Damage & Health for hit-juice). Per-event recipes authored as Godot Resource files (JuiceProfile.tres). Mutex-guarded hybrid hit-stop dispatch."
+    not: "Distributed call-sites (every weapon/ability calls Juice.hit() directly — re-creates the per-weapon coupling the concept warned against); EventBus autoload aggregating multiple publishers (rejected by state_machine_pattern precedent — over-engineered for solo-dev iteration)."
+    adr: docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    reason: "Concept warns: per-weapon Juice code is unmaintainable at 4 Champions × 20 weapons × 5 zombie types. Centralized dispatcher with data-driven recipes consolidates hundreds of variants into ONE code path. Direct subscription (not EventBus middleman) preserves the autoload-coupling discipline established by ADR-0001's state_machine_pattern."
+    referenced_by:
+      - docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    added: 2026-04-27
+    revised: ""
+
+  - purpose: juice_profile_storage
+    status: active
+    api: "Godot Resource files (.tres) — `class_name JuiceProfile extends Resource` — with @export fields for hit-stop, shake, particle, and audio parameters per weapon/ability."
+    not: "Hardcoded constants in Juice autoload (kills hot-reload; couples balance to programmer time); Dictionary literals in code (no editor inspector for designer tuning); JSON config files (loses Godot's type-safe @export validation)."
+    adr: docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    reason: "Resources are the canonical Godot pattern for designer-tunable data: editor-inspector authoring, hot-reload, type-safe @export validation, diff-friendly .tres serialization. Solo-dev productivity goal makes hardcoded alternatives unworkable. Pool init uses duplicate_deep() (per 4.5 advisory) only when per-instance copies of nested resources are needed; shared read-only resources index by ProfileId."
+    referenced_by:
+      - docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    added: 2026-04-27
+    revised: ""
+
+  - purpose: hit_stop_implementation
+    status: active
+    api: "Hybrid: per-actor `process_mode = PROCESS_MODE_DISABLED` for normal hits (~50 ms); global `Engine.time_scale = 0.05` for kills, crits, and boss-hits. Mutex flag `_global_hit_stop_active` blocks new per-actor freezes while global is active. Restore timers use `get_tree().create_timer(duration, true, false, true)` (final true = ignore_time_scale)."
+    not: "Pure-global `Engine.time_scale` for every hit (constant slow-mo at 100+ zombies reads as frame-stutter, not juice); pure per-actor freeze (loses 'the moment' on kills/crits/boss-hits — fails Pillar 2 ceiling)."
+    adr: docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    reason: "AAA references (Hades, Hyper Light Drifter) ship hybrid for this exact reason. Per-actor handles the 99% case without freezing UI/music; global slow-mo reserves the cinematic emphasis for kill/crit/boss moments. Mutex prevents the per-actor restore racing the global restore. Real-time SceneTreeTimer prevents the per-actor restore from being slowed by a concurrent global hit-stop."
+    referenced_by:
+      - docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    added: 2026-04-27
+    revised: ""
+
+  - purpose: impact_sfx_audio_class
+    status: active
+    api: "Non-positional `AudioStreamPlayer` (NOT `AudioStreamPlayer2D`) on bus `SFX`, pre-instantiated pool of 16 (engine-reference audio.md pattern). Pool exhaustion drops new SFX silently — never queues."
+    not: "AudioStreamPlayer2D positional 2D audio for hit-impact SFX (off-screen kills attenuate quieter — directly violates Pillar 2 'Satisfying Kills, Always')."
+    adr: docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    reason: "Pillar 2's *always* word is load-bearing. Genre convention (Vampire Survivors, Hades, Risk of Rain 2) is non-positional impact SFX. Reserve AudioStreamPlayer2D for ambient/environmental sound (footsteps, zone ambient, machinery hum) where positional behavior enhances immersion without competing with kill-feel. See forbidden_patterns: positional_audio_for_impact_sfx."
+    referenced_by:
+      - docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    added: 2026-04-27
+    revised: ""
+
+  - purpose: save_file_format
+    status: active
+    api: "JSON via `FileAccess.open(path, FileAccess.WRITE)` + `f.store_string(JSON.stringify(envelope))` for all user:// save files EXCEPT `user://settings.cfg`. `settings.cfg` uses Godot's `ConfigFile` (INI-like) per platform convention."
+    not: "FileAccess.store_var (Variant binary — opaque, format-changes-between-Godot-versions, no human-readable corruption recovery); ResourceSaver/.tres for user save data (Resources are for editor-authored res:// assets, not user-mutable user:// data)."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    reason: "ADR-0001 already declared the snapshot 'JSON-serializable' (line 49 + 283). Saves run on PREP boundaries (~1 per ~3 minutes); JSON's perf cost is irrelevant. Concept's 'invest in versioning and recovery early' (line 325) requires human-readable files for manual forensic recovery — opaque Variant-binary makes corruption unrecoverable. Resources fight us for user-mutable data because class_name resolution and script: refs aren't stable across refactors. ADR-0004's 'no JSON config' rule applies to designer-tuned project config (use @export Resources), NOT to user-mutable runtime save state — see ADR-0006 Risk 7 for the full carve-out."
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    revised: ""
+
+  - purpose: save_file_layout
+    status: active
+    api: "Split-by-domain under user://. Files: settings.cfg, meta_progression.save, meta_currency.save, leaderboard.save, achievements.save, run_snapshot.save. Each with its own .bak sibling and transient .tmp during atomic writes."
+    not: "Single combined profile.save with all domains nested under one root (corruption blast radius too large); hybrid (only settings split) — partial split confuses migration testing."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    reason: "Concept Tech Risk line 325: 'corrupted saves kill retention.' A single corrupt byte must not cost 100h of meta-progression. Domain-split corruption is recoverable per-domain; combined is not. Cost of complexity (separate files + .bak each) is bounded; cost of total-profile-wipe corruption is unbounded."
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    revised: ""
+
+  - purpose: save_versioning_scope
+    status: active
+    api: "Per-file top-level `schema_version: int` field. The loader reads schema_version BY KEY NAME (not position; Godot 4.6.2 JSON.stringify does not guarantee key order). Each file's schema_version is independent; bumping leaderboard's version does NOT touch meta_progression's version. The run_snapshot.save file's schema_version IS the snapshot Dictionary's schema_version from ADR-0001 (one field, two consumers — not double-versioning)."
+    not: "Global single schema_version across all files (couples migrations of unrelated domains; every domain change touches every file's migration code)."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    reason: "Domains evolve at different cadences. Settings format may stabilize early; leaderboard format may evolve through Alpha; meta_progression format may evolve through Full Vision. Per-file versioning lets each migrate independently. Aligns with split-file layout."
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    revised: ""
+
+  - purpose: save_migration_window
+    status: active
+    api: "Loader handles schema_version, schema_version - 1, schema_version - 2 (current + 2 prior versions = 3 total). Migration runs eagerly at load, chained: v(N-2) → v(N-1) → v(N). Migrated data is NOT written back to disk on load; written back on the next save (preserves the original for forensic recovery until then)."
+    not: "N-1 only (penalizes players who skipped a release); forever-supported (migration code grows unboundedly; risky for solo dev over 12-18 months)."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    reason: "Bounded migration burden for solo dev. Files with schema_version > current → REFUSED_TOO_NEW (friendly error: 'update game'). Files with schema_version < current - 2 → REFUSED_TOO_OLD (friendly error + offer fresh-start dialog). At any time only 3 versions of each domain need a migration path."
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    revised: ""
+
+  - purpose: save_atomicity_strategy
+    status: active
+    api: "On save: (1) if main file exists, copy main → .bak (overwrite any prior .bak). (2) Write new content to <file>.tmp via FileAccess.WRITE. (3) Check ALL FileAccess.store_* return values (4.4 engine fact — they return bool, not void); ANY false → abort, emit save_failed signal, leave .bak and main untouched, do not rename. (4) IF main file exists, DirAccess.remove_absolute(main) — REQUIRED for Windows compatibility (Risk 8). (5) DirAccess.rename_absolute(<file>.tmp, <file>) — atomic replace once destination is absent."
+    not: "Direct overwrite of main file (no .bak chain — corruption mid-write loses prior version); rename without remove-main-first on Windows (silently fails on every save after the first); ignoring FileAccess.store_* return values (silent truncation)."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    reason: "Windows is the project's primary platform. DirAccess.rename_absolute fails on Windows when destination already exists — without remove-main-first, every save after the first silently fails. .bak holds prior content during the gap so removal is safe. The .tmp file lives under user:// (same filesystem as target), so cross-volume rename failure does not apply. FileAccess.store_* return-bool is a confirmed 4.4 breaking change (breaking-changes.md line 52)."
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    revised: ""
+
+  - purpose: save_corruption_recovery_chain
+    status: active
+    api: "On load failure (parse error / non-Dictionary root / version-out-of-window / migration throws): (1) Copy main file to user://corrupted_<domain>_<unix>.save for forensic preservation. (2) Try <file>.bak — if it parses + version-in-window + migrates, return data with status RECOVERED_FROM_BACKUP and emit load_recovered_from_backup signal. (3) If .bak also fails: copy .bak to user://corrupted_<domain>_<unix>.bak.save, return defaults with status FELL_BACK_TO_DEFAULTS, emit load_fell_back_to_defaults(domain, preserved_path) signal. UI MUST render non-blocking warning."
+    not: "Wipe-and-defaults on first failure (no .bak preservation — concept anti-pattern); refuse-to-load with surface error (ships poorly to mainstream players who don't know what user:// is); silent fallback without UI warning (players think they lost progress to a bug — see ADR-0006 Risk 1)."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    reason: "Direct mitigation for concept Tech Risk line 325 ('Corrupted saves kill retention. Invest in save versioning and recovery early.'). Fallback chain gives 2 chances to recover before defaults; forensic preservation lets power-users recover by hand. Hard UI contract on load_fell_back_to_defaults prevents silent-loss-mistaken-for-bug."
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    revised: ""
 
 # Example:
 #
@@ -157,7 +584,115 @@ api_decisions: []
 # Register a pattern when an ADR explicitly bans it AND other ADRs might
 # unknowingly use it (i.e., it's a tempting but wrong approach for this project).
 
-forbidden_patterns: []
+forbidden_patterns:
+  - pattern: string_based_signal_connection
+    status: active
+    description: "Signal connections must use the typed Callable form: signal.connect(callable). String-based connect(\"signal_name\", object, \"method_name\") is forbidden."
+    why: "Deprecated since Godot 4.0 (see docs/engine-reference/godot/deprecated-apis.md). Type-safe and refactor-friendly; string form silently breaks on rename."
+    adr: docs/architecture/adr-0003-language-routing-policy.md
+    added: 2026-04-25
+
+  - pattern: unbatched_csharp_to_gdscript_signal_emission
+    status: active
+    description: "A C# hot-path that emits to GDScript more than ~50 times per frame MUST batch emissions. Per-event emission at peak load is forbidden."
+    why: "Every C#↔GDScript signal crossing incurs Variant marshalling overhead. At 100+ emissions/frame this compounds to a measurable hit. The Damage & Health batching rule (per-frame health updates on 100+ enemies — emit only on state transitions) is the canonical example and is mandatory, not advisory."
+    adr: docs/architecture/adr-0003-language-routing-policy.md
+    added: 2026-04-25
+
+  - pattern: gdextension_in_mvp_v1
+    status: active
+    description: "GDExtension (C++ via godot-cpp, or other native bindings) is excluded from MVP and V1 scope. Hot-path systems use C#, not native code, until V1 ships."
+    why: "Solo first-time game dev cannot absorb native build pipeline complexity (SCons/CMake, per-platform binaries, no hot reload) alongside game design. C# is sufficient for the four flagged hot-path systems. Re-evaluate post-V1 only if profiling shows C# itself cannot hit budget."
+    adr: docs/architecture/adr-0003-language-routing-policy.md
+    added: 2026-04-25
+
+  - pattern: csharp_signal_pascalcase_in_gdscript_connect
+    status: active
+    description: "When connecting from GDScript to a C# [Signal] delegate, the signal MUST be accessed via its snake_case auto-translated name, NOT the PascalCase delegate name. Example: for `[Signal] public delegate void WaveCompleteEventHandler(...)`, GDScript writes `wave_system.wave_complete.connect(...)`, NEVER `wave_system.WaveComplete.connect(...)`."
+    why: "Godot 4.6.2 auto-translates C# signal delegate names from PascalCase + EventHandler suffix to snake_case for GDScript access. The PascalCase form is the C#-side accessor (used in EmitSignal(SignalName.WaveComplete, ...)) and is NOT a valid GDScript signal property. Using PascalCase from GDScript fails at runtime with a missing-signal error. ADR-0003's Cross-Language Boundary Contract documents the auto-translation in prose but its connection-syntax example is currently incorrect — this pattern catches future violations regardless of which ADR's example is referenced."
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+
+  - pattern: caching_game_state_across_frames
+    status: active
+    description: "Consumer systems MUST NOT cache GameStateMachine.current_state in a local variable across frame boundaries. Always read fresh OR subscribe to state_changed/state_entered/state_exited signals."
+    why: "Run State transitions can occur between any two frames. A cached local copy of current_state in a consumer's _process() goes stale silently the moment a transition fires, leading to state-desync bugs (HUD showing wrong phase, music playing wrong track, AI continuing during pause). Subscribing to signals is the canonical pattern; one-shot reads of current_state at the top of a frame are acceptable for single-frame decisions only."
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+
+  - pattern: inserting_game_state_enum_values
+    status: active
+    description: "New GameState enum values MUST be APPENDED to the enum declaration, NEVER inserted between existing values. The enum's int values are persisted in save snapshots; insertion shifts all subsequent values and silently corrupts saves."
+    why: "GDScript anonymous enums assign values by declaration order (MAIN_MENU=0, CHAMPION_SELECT=1, ..., RUN_RESULTS=8). The save snapshot serializes `state` as int. If a future ADR inserts (rather than appends) a new state, every persisted snapshot's `state` and `previous_state` fields silently reference the wrong enum at load time. This pattern catches the violation at PR review (the regression test asserting MAIN_MENU==0 through RUN_RESULTS==8 would fail). Insertion is a schema-breaking change requiring a schema_version bump and a migration in ADR-006."
+    adr: docs/architecture/adr-0001-run-state-game-flow.md
+    added: 2026-04-25
+    referenced_by:
+      - docs/architecture/adr-0006-save-schema-versioning.md  # generalizes this GameState-specific rule to all persisted enums via inserting_persisted_enum_values
+
+  - pattern: csharp_method_snakecase_in_gdscript_call
+    status: active
+    description: "User-defined C# public methods MUST be called from GDScript using their EXACT PascalCase declared name. Example: for `public void Register(Vector2 target)` on a C# class, GDScript writes `agent.Register(goal)`, NEVER `agent.register(goal)`. The PascalCase→snake_case auto-translation that applies to [Signal] delegate names does NOT apply to plain user-defined methods."
+    why: "Godot 4.6.2's binding generator auto-translates `[Signal]` delegate names from PascalCase + EventHandler suffix to snake_case for GDScript access (e.g., WaveCompleteEventHandler → wave_complete). The same translation does NOT apply to user-defined C# methods — only engine-bound class members get auto-translated. Calling `agent.register(goal)` from GDScript silently resolves to a different (or non-existent) method and fails at runtime. Together with forbidden_patterns: csharp_signal_pascalcase_in_gdscript_connect, this codifies the full boundary naming rule: signals are snake_case in GDScript; methods are PascalCase in GDScript. Catches the violation at code review (and at runtime via missing-method error)."
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-27
+
+  - pattern: per_agent_navigationagent2d_for_crowd
+    status: active
+    description: "Crowd-scale agent groups (>50 agents intended to share a destination) MUST NOT use one NavigationAgent2D node per agent with avoidance_enabled. Use the shared-path-cache + custom-steering pattern (per ADR-0002) instead."
+    why: "Per-agent NavigationAgent2D incurs (a) per-agent path queries — no shared path across agents on the same lane, and (b) RVO2 internal neighbor queries that are O(N²) worst case. Community profiling shows the pattern hits the 60fps ceiling well below 100 agents in 2024-25 Godot benchmarks. The pattern is the canonical anti-pattern for tower-defense / RTS crowds in Godot. ADR-0002 explicitly rejects this as Alternative A. Champion (System 12) and other single-agent navigation use cases are out of scope of this ban — they are not 'crowds'."
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-27
+
+  - pattern: tween_without_ignore_time_scale_in_ui
+    status: active
+    description: "Tweens authored on UI / HUD nodes, on cross-system real-time effects (audio cross-fades, music transitions), or on screen-shake-recovery animations MUST call `tween.set_ignore_time_scale(true)` immediately after `create_tween()`. Tweens animating world-space actor properties (enemy hit-flash tint, projectile ease-out, weapon recoil) intentionally omit this flag so they participate in the slow-mo effect during global hit-stop."
+    why: "When global hit-stop sets `Engine.time_scale = 0.05`, ALL active Tweens slow proportionally by default in Godot 4.6.2 — UI fades, damage-number fly-ups, music cross-fades all turn into 5%-speed molasses for ~80 ms on every kill. The player perceives this as a frame-rate stutter, not as juice. `set_ignore_time_scale(true)` is the documented decoupling mechanism. Silent failure mode: forgetting the flag produces visually broken hit-stop with no error or warning. Code review enforces. Test Harness regression test (VC-7 in ADR-0004) asserts a tagged real-time Tween completes in expected wall-clock duration ±10% during a simulated global hit-stop."
+    adr: docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    added: 2026-04-27
+
+  - pattern: positional_audio_for_impact_sfx
+    status: active
+    description: "Hit-impact SFX (zombie hits, kills, crits, boss-hits, projectile impacts) MUST use non-positional `AudioStreamPlayer`, NOT `AudioStreamPlayer2D`. Reserve `AudioStreamPlayer2D` for ambient/environmental sound (footsteps, zone ambient, machinery hum) where positional behavior enhances immersion."
+    why: "`AudioStreamPlayer2D` applies distance attenuation and panning based on the listener position. Off-screen kills attenuate quieter or become inaudible, directly violating Pillar 2 'Satisfying Kills, *Always*'. The *always* word is load-bearing — every kill, on-screen or off, must register at full SFX-bus volume. Genre convention (Vampire Survivors, Hades, Risk of Rain 2) is non-positional impact SFX. The engine-reference audio.md pool pattern uses non-positional `AudioStreamPlayer` for this reason. If positional audio is intentionally desired for tactical readability, document the explicit choice in a follow-up ADR with `max_distance` tuned high enough that all in-scene positions remain audible (~3000+ px on the largest map size)."
+    adr: docs/architecture/adr-0004-juice-pipeline-integration-model.md
+    added: 2026-04-27
+
+  - pattern: inserting_persisted_enum_values
+    status: active
+    description: "Any GDScript or C# enum whose int value is persisted to disk in any save file under user:// MUST evolve append-only. New enum values MUST be APPENDED to the enum declaration; NEVER insert a new value between existing values. This rule generalizes ADR-0001's `inserting_game_state_enum_values` pattern from GameState specifically to ALL persisted enums."
+    why: "GDScript anonymous enums and C# enums both assign int values by declaration order. The save file serializes the enum as int. If a future ADR or system inserts (rather than appends) a new value, every persisted save's enum-typed fields silently reference the wrong meaning at load time. Insertion is a schema-breaking change requiring a `schema_version` bump and a migration entry per ADR-0006. Per-system unit tests must assert enum value stability for any enum used in `data` (e.g., `assert(GameState.MAIN_MENU == 0)` per ADR-0001's regression). The forbidden_pattern catches violations at PR review and CI."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+    referenced_by:
+      - docs/architecture/adr-0001-run-state-game-flow.md  # ADR-0001's `inserting_game_state_enum_values` is the GameState-specific instance of this generalized rule
+
+  - pattern: unchecked_fileaccess_store_return
+    status: active
+    description: "Any code path that calls `FileAccess.store_string`, `FileAccess.store_var`, `FileAccess.store_buffer`, `FileAccess.store_line`, `FileAccess.store_pascal_string`, `FileAccess.store_8/16/32/64`, `FileAccess.store_float/double/half/real`, or `FileAccess.store_csv_line` MUST check the bool return value. ANY false return MUST abort the write, leave the prior file untouched, and surface the failure (in SaveManager: emit save_failed signal). Saves silently truncating because of an ignored false return is the canonical save-corruption vector."
+    why: "Godot 4.4 changed all `FileAccess.store_*` methods from void return to bool return (breaking-changes.md line 52). The LLM's training data predates this. Code that ignores the return — easy to write because it looks like the pre-4.4 API — silently drops writes when the disk is full, the file is read-only, or the OS rate-limits I/O. The save SUCCEEDS from the caller's perspective; the file is truncated or empty. SaveManager owns FileAccess for all user:// I/O (see direct_save_file_io_outside_save_manager); the return-check rule is enforced there. Any code outside SaveManager that needs FileAccess for any reason (logging, exports, screenshots) MUST also check returns."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+
+  - pattern: direct_save_file_io_outside_save_manager
+    status: active
+    description: "No code outside `src/persistence/save_manager.gd` may write to or read from `user://` for the purpose of persistent save data. All persistent domains (settings, meta_progression, meta_currency, leaderboard, achievements, run_snapshot) MUST go through `SaveManager.save_domain(domain, data)` and `SaveManager.load_domain(domain)`. Direct FileAccess or DirAccess calls against user:// from domain code, UI code, or system code are forbidden."
+    why: "SaveManager owns the cross-cutting concerns: atomicity (write-temp → remove-main → rename), .bak rotation, FileAccess.store_* return-value checks (4.4 engine fact), Windows remove-before-rename, JSON.parse_string non-Dictionary guards, schema_version envelope wrap/unwrap, migration runner, and the corruption-recovery fallback chain. Duplicating any of these in a domain creates 7 places to forget the rule. Direct user:// I/O bypassing SaveManager guarantees one of: corrupted saves, silent truncation, Windows-only failure, missing .bak protection. Exception: log files and crash dumps may write to user:// directly because they are not save data and have different correctness requirements."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+
+  - pattern: windows_rename_without_remove
+    status: active
+    description: "Code that calls `DirAccess.rename_absolute(src, dst)` to overwrite an existing destination file MUST first call `DirAccess.remove_absolute(dst)` (gated on `FileAccess.file_exists(dst)`). On Windows, `rename_absolute` fails (returns non-OK) if `dst` already exists. The remove-before-rename step is mandatory for cross-platform correctness."
+    why: "Windows is the project's primary platform (Steam / itch PC release). DirAccess.rename_absolute on Windows uses MoveFile semantics, which fails when the target exists, unlike POSIX rename which atomically replaces. Without remove-before-rename, every save after the first silently fails on Windows — the .tmp accumulates and the main file never updates. The .bak file already holds prior content during the brief window between remove and rename, so removal is safe. SaveManager's atomicity strategy bakes this in (api_decisions: save_atomicity_strategy); this forbidden_pattern catches future code that re-implements rename logic outside SaveManager."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
+
+  - pattern: unguarded_json_parse_string_root
+    status: active
+    description: "Code that calls `JSON.parse_string(text)` MUST check that the result is non-null AND is a Dictionary before accessing keys, when the expected wire format is a Dictionary. Specifically: `if parsed == null or not parsed is Dictionary: <treat as parse failure>`. A corrupted save that happens to be valid JSON of a non-Dictionary root (`[1,2,3]`, `null`, `42`, `\"string\"`) crashes on `parsed[\"schema_version\"]` access without this guard."
+    why: "JSON.parse_string returns Variant — any JSON value, not just Dictionary. The corruption-recovery path (api_decisions: save_corruption_recovery_chain) is supposed to catch all malformed saves and fall through to .bak then defaults. Without the non-Dictionary guard, a save file containing `[1,2,3]` parses successfully, then crashes on key access — bypassing the recovery chain that exists specifically to prevent crashes on corruption. SaveManager bakes this guard into _try_load_file. The forbidden_pattern catches any future code that calls JSON.parse_string for save-data-shaped content without the guard."
+    adr: docs/architecture/adr-0006-save-schema-versioning.md
+    added: 2026-04-28
 
 # Example:
 #
