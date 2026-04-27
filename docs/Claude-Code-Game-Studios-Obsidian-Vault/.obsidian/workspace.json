@@ -1,0 +1,212 @@
+{
+  "main": {
+    "id": "7cccd871a4049617",
+    "type": "split",
+    "children": [
+      {
+        "id": "e3b18fd4a578efc7",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "388b082297d258f6",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "_Maps/Studio-Map.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Studio-Map"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "121a7dc67f7f2bc6",
+    "type": "split",
+    "children": [
+      {
+        "id": "e00c1ba077398e04",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ed2cc43d3791d013",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": true
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "d29637b0229b23fe",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "af13965b4f4be6be",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          },
+          {
+            "id": "a579d9acf11a3fea",
+            "type": "leaf",
+            "pinned": true,
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "_Maps/Studio-Map.md",
+                "mode": "source",
+                "source": false
+              },
+              "pinned": true,
+              "icon": "lucide-file",
+              "title": "Studio-Map"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 398.5
+  },
+  "right": {
+    "id": "2a55118ff68ea540",
+    "type": "split",
+    "children": [
+      {
+        "id": "cd11a3957bfd007a",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a987e7dedcda7b9b",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "_Maps/Studio-Map.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for Studio-Map"
+            }
+          },
+          {
+            "id": "0ddd7fc598df9bef",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "_Maps/Studio-Map.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from Studio-Map"
+            }
+          },
+          {
+            "id": "204a0c0e76f51e09",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "ab08b2f7f278a4c0",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "42a38284332f2602",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "_Maps/Studio-Map.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of Studio-Map"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false,
+      "omnisearch:Omnisearch": false
+    }
+  },
+  "active": "388b082297d258f6",
+  "lastOpenFiles": [
+    "_Maps/Pipeline-Map.md",
+    "_Maps/Studio-Map.md",
+    "03-Phases/Phase-3-Technical-Setup.md",
+    "Untitled.base",
+    "Untitled.canvas",
+    "README.md"
+  ]
+}
