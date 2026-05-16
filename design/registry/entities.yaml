@@ -35,9 +35,17 @@
 # FORMAT: YAML. Consistent indentation is critical for grep reliability.
 #   Sections: entities | items | formulas | constants
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
+#
+# SCOPE NOTE — this file vs docs/registry/architecture.yaml:
+#   - This file (entities.yaml) registers GAME-WORLD FACTS: numeric constants,
+#     named formulas, items, and entities. /consistency-check reads this.
+#   - docs/registry/architecture.yaml registers INTERFACE CONTRACTS: signal
+#     names, state enums, API signatures, and ADR-derived code contracts.
+#     /architecture-review reads that.
+#   Do not put interface contracts here; do not put numeric constants there.
 
 version: 1
-last_updated: ""
+last_updated: "2026-05-02"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -50,23 +58,9 @@ last_updated: ""
 
 entities: []
 
-# Example (remove when first real entry is added):
-#
-# entities:
-#   - name: goblin
-#     status: active              # active | deprecated
-#     source: design/gdd/combat.md
-#     referenced_by:
-#       - design/gdd/combat.md
-#       - design/gdd/inventory.md
-#     health: 40
-#     damage: 8
-#     drops:
-#       - item: goblin_arm        # must match an entry in items section
-#         qty: 1
-#         drop_rate: 0.8          # 0.0–1.0
-#     added: 2026-03-26
-#     revised: ""
+# (No entities yet. Lane/Map is Foundation/Core and introduces no game-world
+# entities. Champion #12, Zombie/Enemy AI #17, and Card #21 will populate this
+# section when authored.)
 
 
 # ─── ITEMS ───────────────────────────────────────────────────────────────────
@@ -79,22 +73,7 @@ entities: []
 
 items: []
 
-# Example:
-#
-# items:
-#   - name: goblin_arm
-#     status: active
-#     source: design/gdd/combat.md   # drop defined in combat GDD
-#     referenced_by:
-#       - design/gdd/combat.md
-#       - design/gdd/inventory.md    # inventory GDD lists its weight/stack rules
-#       - design/gdd/economy.md      # economy GDD references its sell price
-#     value_gold: 5
-#     weight: 1
-#     stackable: true
-#     category: crafting_material
-#     added: 2026-03-26
-#     revised: ""
+# (No items yet. Loot/Drop #28 and Card #21 will populate this section.)
 
 
 # ─── FORMULAS ────────────────────────────────────────────────────────────────
@@ -106,29 +85,61 @@ items: []
 #   output_range[min, max], added
 # Optional: expression (the actual formula), notes
 
-formulas: []
+formulas:
+  - name: path_length_px
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md      # D.4 — definition
+      # Wave & Spawn (#18) will divide this by zombie move_speed_px_per_sec
+      # to produce per-lane travel time. Append it to referenced_by when the
+      # Wave & Spawn GDD is authored.
+    variables:
+      - lane_depth_cells       # int, typical 30 at MVP; scene-authoring-time
+      - cell_size_px           # locked constant (see constants section)
+      - bend_depth_fraction    # locked constant (see constants section)
+      - bend_angle_deg         # locked range 20–30 (see constants section)
+    output_range: [1920, 2400]   # px, MVP defaults at lane_depth_cells=30:
+                                 # straight=1920, max bend ~+8.8% ≈ 2089;
+                                 # range allows for V1 lane_depth_cells up to ~37
+    expression: |
+      segment_pre_bend  = bend_depth_fraction × lane_depth_cells × cell_size_px
+      lateral_offset_px = segment_pre_bend × tan(bend_angle_deg × π / 180)
+      segment_post_bend = sqrt((lane_depth_cells × (1 − bend_depth_fraction) × cell_size_px)² + lateral_offset_px²)
+      path_length_px    = segment_pre_bend + segment_post_bend
+    notes: >
+      Spawn-to-goal centreline distance. Each lane has one bend at
+      `bend_depth_fraction` lane depth at a `bend_angle_deg` inflection.
+      Always greater than a straight `lane_depth_cells × cell_size_px`.
+      At 20° bend, post-bend is ~1.6% longer than straight equivalent;
+      at 30° bend, ~7%. Wave/Spawn divides by zombie move_speed_px_per_sec
+      to compute travel time in seconds. Lane/Map GDD Section D.4.
+    added: 2026-05-02
+    revised: ""
 
-# Example:
-#
-# formulas:
-#   - name: damage_formula
-#     status: active
-#     source: design/gdd/combat.md
-#     referenced_by:
-#       - design/gdd/combat.md
-#       - design/gdd/progression.md   # progression GDD scales attack variable
-#     variables:
-#       - attack
-#       - defense
-#       - crit_chance
-#       - crit_multiplier
-#     output_range: [0, 999]
-#     expression: "max(0, attack - defense) * (1 + crit_chance * crit_multiplier)"
-#     notes: "Output feeds into health-system damage intake. Min is 0 (armour
-#       can absorb all damage). Max is uncapped in formula but tuning knob
-#       damage_cap in combat.md clamps at 999."
-#     added: 2026-03-26
-#     revised: ""
+  - name: buildable_strip_distribution
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md      # D.5 — definition
+      # Placement & Grid (#25) will read cell counts; append when authored.
+    variables:
+      - total_buildable_cells              # int, 18 at MVP (see constants)
+      - lane_count                         # int, 2 at MVP, 2–3 at V1
+      - lane_width_cells                   # int, 5 at MVP (see constants)
+    output_range: [1, 3]                   # strip_rows_needed; hard cap at 3
+    expression: |
+      cells_per_lane     = total_buildable_cells / lane_count
+      strip_rows_needed  = ceil(cells_per_lane / lane_width_cells)
+    notes: >
+      Derives strip row count from cell budget and lane configuration.
+      Hard constraint: strip_rows_needed ≤ 3 (Section C Rule 6). At MVP
+      defaults: cells_per_lane = 9, strip_rows_needed = ceil(9/5) = 2.
+      If strip_rows_needed > 3, the cell budget exceeds the strip-depth
+      constraint and must be reduced before scene authoring. Lane/Map
+      GDD Section D.5.
+    added: 2026-05-02
+    revised: ""
 
 
 # ─── CONSTANTS ───────────────────────────────────────────────────────────────
@@ -139,30 +150,199 @@ formulas: []
 #
 # Required fields: name, status, source, referenced_by, value, unit, added
 
-constants: []
+constants:
+  - name: cell_size_px
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+      # Pipeline-binding. Will be referenced by every per-asset spec in
+      # design/art/asset-specs/, plus Placement & Grid (#25), Wave/Spawn
+      # (#18) for sprite-scale, Camera (#6), HUD GDD when authored.
+    value: 64
+    unit: pixels
+    notes: >
+      Pipeline-binding: every sprite is sized against this value. Do NOT
+      change after MVP art begins. Smaller (32) quadruples bake outline
+      density and risks D.7 budget. Larger (96+) overflows 1080p
+      viewport. Locked by Lane/Map GDD Section D and Tuning Knobs.
+    added: 2026-05-02
+    revised: ""
 
-# Example:
-#
-# constants:
-#   - name: gold_carry_limit
-#     status: active
-#     source: design/gdd/economy.md
-#     referenced_by:
-#       - design/gdd/economy.md
-#       - design/gdd/inventory.md   # inventory enforces the carry limit
-#       - design/gdd/ui.md          # HUD displays current gold vs limit
-#     value: 9999
-#     unit: gold
-#     added: 2026-03-26
-#     revised: ""
-#
-#   - name: base_inventory_slots
-#     status: active
-#     source: design/gdd/inventory.md
-#     referenced_by:
-#       - design/gdd/inventory.md
-#       - design/gdd/progression.md  # progression unlocks additional slots
-#     value: 20
-#     unit: slots
-#     added: 2026-03-26
-#     revised: ""
+  - name: lane_count_mvp
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+      # Wave/Spawn (#18) per-lane spawner loop, Placement & Grid (#25)
+      # cell affinity, Camera (#6) view bounds, Crowd Pathfinding (#11)
+      # path-requery count.
+    value: 2
+    unit: lanes
+    notes: >
+      MVP scope: 1 map, 2 lanes parallel (NOT V-shape). V1 expands to
+      3 maps under the same data structure with up to 3 lanes per map
+      (see lane_count_v1_max). Locked by Lane/Map GDD Section C Rule 4.
+    added: 2026-05-02
+    revised: ""
+
+  - name: lane_count_v1_max
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+    value: 3
+    unit: lanes
+    notes: >
+      V1 ceiling. >3 lanes fails Pillar 4 readability and scales
+      t_navpoly_rebake unacceptably. Locked by Lane/Map GDD Section C
+      Rule 1 and Tuning Knobs.
+    added: 2026-05-02
+    revised: ""
+
+  - name: lane_width_cells_mvp
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+      # Wave/Spawn (#18) parallel-zombie-file count, Placement & Grid
+      # (#25) cell column count.
+    value: 5
+    unit: cells
+    notes: >
+      Paper-prototype-gated (see Lane/Map Open Question #4). 3 cells:
+      zombies single-file always, chokepoint loses meaning. 7+ cells:
+      silhouette illegible at 100+ density (Pillar 2 fails). Locked at
+      5 pending paper-prototype validation.
+    added: 2026-05-02
+    revised: ""
+
+  - name: lane_depth_cells_mvp
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+      # Wave/Spawn (#18) divides D.4 path_length_px by zombie speed
+      # for travel time; Camera (#6) vertical bounds.
+    value: 30
+    unit: cells
+    notes: >
+      MVP target. <25 cells: zombies arrive too fast, Pillar 4
+      reaction-time fails. >40 cells: wave pacing drags. Lane/Map GDD
+      Tuning Knobs.
+    added: 2026-05-02
+    revised: ""
+
+  - name: bend_depth_fraction
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+      # Wave/Spawn (#18) — chokepoint timing within travel time.
+    value: 0.60
+    unit: fraction_of_lane_depth
+    notes: >
+      Position of the mid-lane bend along its depth. Safe range
+      0.50–0.70. Must not overlap buildable_strip_position_fraction.
+      Locked by Lane/Map GDD Section C Rule 5.
+    added: 2026-05-02
+    revised: ""
+
+  - name: bend_angle_deg_min
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+    value: 20
+    unit: degrees
+    notes: >
+      Lower bound of the mid-lane bend inflection angle. Below 20°
+      the Rule 5 chokepoint disappears. Locked by Lane/Map GDD
+      Section C Rule 5 and Tuning Knobs.
+    added: 2026-05-02
+    revised: ""
+
+  - name: bend_angle_deg_max
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+    value: 30
+    unit: degrees
+    notes: >
+      Upper bound of the mid-lane bend inflection angle. Above 35°
+      the NavigationPolygon outline becomes irregular and the lane
+      stops reading as a single corridor. Locked by Lane/Map GDD
+      Section C Rule 5 and Tuning Knobs.
+    added: 2026-05-02
+    revised: ""
+
+  - name: total_buildable_cells_mvp
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+      # Placement & Grid (#25) cell budget, Resource/Economy (#20)
+      # placement-cost-per-cell calculations.
+    value: 18
+    unit: cells
+    notes: >
+      Paper-prototype-gated (see Lane/Map Open Question #4). Total
+      buildable cells across all MVP lanes. <12: no placement
+      experimentation, Pillar 3 fails. >24: strip stops feeling like
+      a strip, Section B fantasy breaks. Lane/Map GDD Section C Rule 6
+      and Tuning Knobs.
+    added: 2026-05-02
+    revised: ""
+
+  - name: buildable_strip_position_fraction
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md
+    value: 0.20
+    unit: fraction_of_lane_depth_from_goal
+    notes: >
+      Distance the buildable strip sits from the goal end of the lane.
+      Safe range 0.15–0.25. <0.15: too close to goal, no defensive
+      depth. >0.25: strip eats into bend area. Must not overlap
+      bend_depth_fraction. Locked by Lane/Map GDD Tuning Knobs.
+    added: 2026-05-02
+    revised: ""
+
+  - name: bake_total_budget_ms
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md           # D.6 budget + Section E AC-LM-21
+      - docs/architecture/adr-0001-run-state-game-flow.md  # bake gate
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+      # Run State (#8) raises 500ms timeout-and-abort to MAIN_MENU;
+      # ADR-0001 needs amendment to capture this (Open Question #2).
+    value: 500
+    unit: milliseconds
+    notes: >
+      Total RUN_LOADING ceiling for all-lanes initial bake. Exceeding
+      this aborts the run to MAIN_MENU with an error. Per-lane bake
+      budget is 5–15 ms one-shot (see ADR-0002). Pending real-Steam-Deck
+      benchmark (Open Question #7) before this number is locked
+      against shipping hardware.
+    added: 2026-05-02
+    revised: ""
+
+  - name: rebake_per_mutation_slack_ms
+    status: active
+    source: design/gdd/lane-map-system.md
+    referenced_by:
+      - design/gdd/lane-map-system.md           # D.7 — definition
+      # Wall/Fortification (#27) mid-wave placement budget; perf-watchlist.
+    value: 5
+    unit: milliseconds
+    notes: >
+      Conservative frame-budget slack reserved for the mid-wave re-bake
+      cycle (t_navpoly_rebake + t_map_changed_propagation + t_path_requery)
+      after CrowdManager + engine overhead. Hard constraint: if
+      t_navpoly_rebake > 3 ms in profiling, mid-wave placement must
+      throttle, move to a thread, or be disabled. Lane/Map GDD D.7.
+    added: 2026-05-02
+    revised: ""
