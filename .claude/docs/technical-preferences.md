@@ -50,6 +50,20 @@
 - **Draw Calls**: ≤ 1500 per frame
 - **Memory Ceiling**: 2 GB RAM total
 
+### Benchmark Hardware (added 2026-05-02 per Lane/Map R2.1)
+
+Performance ACs that require pinned hardware to be deterministic (e.g., AC-LM-17, AC-LM-18, AC-LM-21 post-bake assertion, Open Question #7 in `design/gdd/lane-map-system.md`) reference the following Tier-2 reference hardware. When authoring a new performance AC, name these specs:
+
+- **Tier-2 reference (PRIMARY)**: Steam Deck OLED (AMD APU "Sephiroth" 6 nm; 8-core RDNA 2 iGPU; 16 GB LPDDR5x; 1280×800 native viewport at primary game resolution; default thermal envelope; SteamOS Holo 3.x; baseline 0.5h cold-boot warmup before measurement).
+- **Tier-2 reference (SECONDARY)**: 2019-class laptop — Intel Core i7-9750H (or equivalent AMD Ryzen 5 3600 mobile), NVIDIA GTX 1660 Ti / GTX 1650 Mobile, 16 GB DDR4-2666, 1920×1080 viewport, Windows 11, antivirus active during measurement (the realistic-user condition).
+
+**Benchmark methodology** (locked per Lane/Map R2):
+- 300-frame minimum measurement window
+- Profiler **OFF** during measurement (profiler overhead invalidates timing)
+- `Time.get_ticks_usec()` instrumentation around measured code paths (NOT `delta` from `_process` — too coarse)
+- Results logged to `production/qa/evidence/` with hardware tier tag, run timestamp, and OS/driver version
+- 95th percentile (p95) is the canonical reporting metric, NOT mean or median (tail latency is what ships as "stutter")
+
 ## Testing
 
 - **Framework**: GUT (GDScript tests), GodotXUnit or chickensoft-games/GoDotTest (C# tests) — finalize on first sprint

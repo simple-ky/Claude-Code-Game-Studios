@@ -1,8 +1,8 @@
 # Systems Index: Last Stand: Champions
 
-> **Status**: Draft — Director-Reviewed (2026-04-25)
+> **Status**: Draft — Director-Reviewed (2026-04-25); Run State #8 **Approved** (R3 + ADR propagation 2026-05-01); **Lane / Map #7 Approved** (R2.1 inline-fix pass 2026-05-02 — `/design-review` Round 2 returned CONDITIONAL APPROVED with 2 blockers + 16 inline fixes; all resolved inline same session per creative-director synthesis); Wave Summary UI #32 DELETED
 > **Created**: 2026-04-25
-> **Last Updated**: 2026-04-25 (revised after Creative Director + Technical Director review)
+> **Last Updated**: 2026-05-02 (Lane / Map #7 promoted from NEEDS REVISION to Approved after R2 + R2.1 inline-fix pass; pending `/propagate-design-change` for ADR-0001 + ADR-0002 amendments)
 > **Source Concept**: design/gdd/game-concept.md
 >
 > **Director Review Summary**: Both `creative-director` and `technical-director`
@@ -44,8 +44,8 @@ shape it into the V1 launch product.
 | 4 | VFX / Particle System | Core | MVP | GDScript | Not Started | — | — |
 | 5 | Dynamic Lighting System | Core | Vertical Slice | GDScript | Not Started | — | — |
 | 6 | Camera System | Core | MVP | GDScript | Not Started | — | — |
-| 7 | Lane / Map System | Core | MVP | GDScript | Not Started | — | — |
-| 8 | Run State / Game Flow System | Core | MVP | GDScript | Not Started | — | — |
+| 7 | Lane / Map System | Core | MVP | GDScript | **Approved** (R2.1 inline-fix pass 2026-05-02 — `/design-review` Round 2 returned CONDITIONAL APPROVED, all 2 blockers + 16 inline fixes resolved same session; pending `/propagate-design-change` for ADR-0001/0002 amendments per [decisions-2026-05-02.md](reviews/lane-map-system-decisions-2026-05-02.md) Section G) | [lane-map-system.md](lane-map-system.md) | — |
+| 8 | Run State / Game Flow System | Core | MVP | GDScript | **Approved** (R3 applied + ADRs 0001+0006 propagated 2026-05-01) | [run-state-game-flow.md](run-state-game-flow.md) | — |
 | 9 | Juice / Feedback Pipeline | Core | MVP | GDScript | Not Started | — | Audio Bus, Camera, VFX |
 | 10 | Adaptive Music System (inferred) | Audio | Alpha | GDScript | Not Started | — | Audio Bus, Run State |
 | 11 | Crowd Pathfinding | Core | MVP | **C#** | Not Started | — | Lane / Map |
@@ -69,7 +69,7 @@ shape it into the V1 launch product.
 | 29 | HUD System (inferred) | UI | MVP | GDScript | Not Started | — | Damage & Health, Ability, Resource / Economy, Streak, Run State |
 | 30 | Card-Roll UI (inferred) | UI | MVP | GDScript | Not Started | — | Card-Roll |
 | 31 | Placement UI (inferred) | UI | MVP | GDScript | Not Started | — | Placement & Grid, Placeable Unit, Resource / Economy |
-| 32 | Wave Summary UI | UI | **Vertical Slice** | GDScript | Not Started | — | Wave, Run State |
+| ~~32~~ | ~~Wave Summary UI~~ | ~~UI~~ | ~~**Vertical Slice**~~ | ~~GDScript~~ | **DELETED 2026-05-01 (Run State GDD R2 / D2)** — replaced by HUD #29 toast notification + Tab-toggle run summary; no dedicated wave-summary consumer | — | — |
 | 33 | Main Menu & Champion Select (inferred) | UI | **Vertical Slice** | GDScript | Not Started | — | Champion, Meta-Progression, Run State |
 | 34 | Run Results / Death UI (inferred) | UI | MVP | GDScript | Not Started | — | Run State, Meta-Currency |
 | 35 | Damage Number / Kill Feedback | UI | MVP | GDScript | Not Started | — | Damage & Health, Juice |
@@ -347,11 +347,13 @@ Beyond Crowd Pathfinding, these systems can blow the 60fps / 1500 draw call / 2G
 | Metric | Count |
 |--------|-------|
 | Total systems identified | 45 |
-| Design docs started | 0 |
-| Design docs reviewed | 0 |
-| Design docs approved | 0 |
-| ADRs authored | 0 / 7 |
-| MVP systems designed | 0 / 28 |
+| Design docs started | 2 (Run State #8, Lane / Map #7) |
+| Design docs reviewed | 2 (Run State — Approved 2026-05-01 R3; Lane / Map — Approved 2026-05-02 R2.1) |
+| Design docs approved | **2** (Run State #8, Lane / Map #7) |
+| Design docs designed (pending review) | 0 |
+| Design docs in revision (post-review) | 0 |
+| ADRs authored | 5 / 7 (0001, 0002, 0003, 0004, 0006; 0005+0007 live inside future GDDs); **ADR-0001 + ADR-0002 amendments pending `/propagate-design-change` after Lane/Map R2.1** |
+| MVP systems designed | **2 / 28** (Run State #8 Approved, Lane / Map #7 Approved) |
 | Vertical Slice systems designed | 0 / 8 (36 cumulative) |
 | Alpha systems designed | 0 / 8 (44 cumulative) |
 | Full Vision systems designed | 0 / 1 (45 cumulative) |

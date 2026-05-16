@@ -1,82 +1,97 @@
 # Active Session State
 
-> **Last Updated**: 2026-04-28
+> **Last Updated**: 2026-05-02 (Lane / Map System #7 — R2 + R2.1 + `/propagate-design-change` COMPLETE; ADR-0001 + ADR-0002 amended; system Approved and unblocked for downstream consumers)
 > **Branch**: tower-defense-game
 
 ---
 
 ## Current Task
 
-ADR-0001 (Run State / Game Flow) authored, godot-specialist-validated, registry-updated, AND `/architecture-review` reviewed (verdict: PASS, 2 minor tightenings applied). ADR-0002 (Crowd Pathfinding Architecture) has also been authored (untracked in git). Ready to either author ADR-0004 (Juice Pipeline Integration Model), or begin GDD #1 (Run State / Game Flow) authoring since ADR-0001 has unblocked it.
+**COMPLETE**: Lane / Map System (#7) revision pipeline — R2 application → Round 2 `/design-review` → R2.1 inline-fix pass → `/propagate-design-change` for ADR-0001 + ADR-0002 amendments.
+
+**Final verdict**: **Approved** (R2.1 inline-fix pass; pending no-op re-review since all blockers + recommendations resolved inline per creative-director synthesis "no formal R3 needed").
+
+---
+
+## What was done in this session (chronological)
+
+1. **R2 application** against `design/gdd/reviews/lane-map-system-decisions-2026-05-02.md` (the locked R1 contract):
+   - 6 design decisions resolved via 2-batch `AskUserQuestion` widget (DD#1 cooldown-throttled mid-wave; DD#2 sync bake; DD#3 idempotent overwrite; DD#4 cell_size_px 64→96; DD#5 fix-the-map Pillar 4; DD#6 retract Pillar 3).
+   - All 8 R1 BLOCKERS (B1–B8) + 12 R1 RECOMMENDATIONS (R1–R12) applied as inline edits to `design/gdd/lane-map-system.md`.
+   - `docs/registry/architecture.yaml` updated: `system: lane-map, budget_ms: 3.0` performance budget; aggregated `LaneSystem.geometry_baked` interface contract; new `cross_system_invariants` section seeded with 3 entries (wall destructibility; mid-wave cost lever; mid-wave cooldown lever); `forbidden_pattern: mutation_api_called_outside_wall_fortification`.
+   - Section J (R2 application notes) appended to GDD.
+
+2. **Round 2 `/design-review`** (full mode) — 5 specialists in parallel + creative-director senior synthesizer:
+   - Specialists: game-designer, systems-designer, qa-lead, godot-specialist, performance-analyst.
+   - Verdict: **CONDITIONAL APPROVED** — 2 confirmed BLOCKERS + 16 inline-fixable findings + 1 escalation-class concern.
+   - BLOCKERS: AC-LM-06 (wrong strip position; missed in R2 strip-relocation edit); AC-LM-18 (a) (required ≤16.6ms but D.7 expects one-frame stutter under DD#1 cooldown framing).
+   - Creative-director synthesis: "Apply inline fixes in same session, add steady-state trigger to D.7, then proceed to /propagate-design-change. No formal R3 needed."
+
+3. **R2.1 inline-fix pass** — same session, 18 fixes:
+   - User locked DD#7 = "Forward-leaning kill-box" Player Fantasy realignment via 1-question widget (per creative-director's recommendation).
+   - 2 BLOCKERS resolved (AC-LM-06 strip position; AC-LM-18 split into criteria a-e).
+   - 16 inline fixes: stale "5 ms slack" sweep; AC-LM-24 generalize map_get_path; AC-LM-11/21 OS.is_debug_build() guard; AC-LM-21 named injector; AC-LM-29 first-placement tiebreaker; AC-LM-30 added to Section F tracker; "Three Advisory" → "Four"; Player Fantasy rewritten; cell_ref → outline_index mapping documented in Rule 7; D.7 arithmetic + slack consistency; D.7 steady-state trigger rule; Open Q #7 adjacency-cost test added; benchmark hardware spec added to `.claude/docs/technical-preferences.md`; architecture.yaml lane-map entry got `cost_model: episodic` + `steady_state_ceiling_for_episodic_validity: 14.0`.
+   - Section J of GDD extended with R2.1 inline-fix notes.
+   - Header status updated to "R2.1 applied; APPROVED for /propagate-design-change."
+
+4. **Systems-index + review-log updates** (user-approved widgets):
+   - `design/gdd/systems-index.md` row #7 promoted from NEEDS REVISION → Approved.
+   - `design/gdd/reviews/lane-map-system-review-log.md` second entry appended (R2 + R2.1 verdict).
+
+5. **`/propagate-design-change`** — ADR amendments:
+   - **ADR-0001 (Run State / Game Flow)**: `VALID_TRANSITIONS` extended (`RUN_LOADING → MAIN_MENU`); new "Bake-failure abort path" subsection appended (DD#2 sync mode rationale; pre-bake validation + post-bake assertion replaces live-abort timer); revision history entry added.
+   - **ADR-0002 (Crowd Pathfinding)**: New "Wall-Block No-Path Fallback" subsection inserted (truncated-path use; event-driven retry policy; "no zombie permanently stuck" guarantee; zombie-at-truncated-terminus owned by Zombie AI/Combat); status + Revision History added.
+   - `docs/architecture/change-impact-2026-05-02-lane-map.md` created (full impact analysis + resolution decisions).
+
+---
+
+## Files modified this session
+
+**Created**:
+- `design/gdd/lane-map-system.md` — full R1 + R2 + R2.1 (the GDD itself; was untracked at session start).
+- `design/gdd/reviews/lane-map-system-decisions-2026-05-02.md` — was already created in prior session.
+- `design/gdd/reviews/lane-map-system-review-log.md` — second entry appended.
+- `docs/architecture/change-impact-2026-05-02-lane-map.md` — full propagation impact report.
+
+**Edited**:
+- `design/gdd/lane-map-system.md` — R2 + R2.1 inline edits.
+- `design/gdd/systems-index.md` — Lane/Map #7 promoted to Approved.
+- `docs/registry/architecture.yaml` — lane-map perf budget + aggregated geometry_baked contract + cross_system_invariants + forbidden_pattern + cost_model fields.
+- `docs/architecture/adr-0001-run-state-game-flow.md` — bake-failure abort path amendment.
+- `docs/architecture/adr-0002-crowd-pathfinding-architecture.md` — Wall-Block No-Path Fallback amendment.
+- `.claude/docs/technical-preferences.md` — Steam Deck OLED + 2019-class laptop benchmark hardware spec.
+- `production/session-state/active.md` — this file.
+
+---
 
 ## Status
 
 - ✅ Game concept authored: `design/gdd/game-concept.md`
-- ✅ Systems index created and director-reviewed: `design/gdd/systems-index.md` (45 systems, 28 MVP, 8 VS, 8 Alpha, 1 Full Vision)
-- ✅ Creative Director review applied (5 findings): Streak→MVP, Wave Summary + Main Menu→VS, Difficulty Modifier anti-pillar note, Build/Modifier high-risk + reorder, Wall rationale clarified
-- ✅ Technical Director review applied (6 findings): added System 45 Test Harness, added Language column with C# routing, ADR plan expanded from 1 to 7, performance watchlist added
-- 🟡 ADRs authored: **3 / 7** (ADR-0003 Language Routing Policy — Proposed; ADR-0001 Run State / Game Flow — Proposed, godot-specialist validated, 15 registry entries added, /architecture-review PASSED 2026-04-28; ADR-0002 Crowd Pathfinding Architecture — Proposed, registry-updated, untracked in git)
-- ⏳ No system GDDs authored yet (GDD #1 Run State now unblocked by ADR-0001)
-- ⏳ No prototypes built yet
-- ✅ ADR-0003 boundary contract reconciled (2026-04-28): line 95 method example corrected from `BuildModifier.compute_stats(input)` (snake_case, wrong — methods preserve PascalCase per ADR-0002 forbidden_pattern `csharp_method_snakecase_in_gdscript_call`) to `BuildModifier.ComputeStats(input)`. ADR-0001 line 202 cross-reference updated to acknowledge ADR-0003 + ADR-0002 jointly codify the full boundary naming rule.
-- ✅ ADR-0001 verification note tightened (2026-04-28): `process_mode = PROCESS_MODE_ALWAYS` clarified to acknowledge it is set explicitly in `_ready()` (default for any Node is `PROCESS_MODE_INHERIT`); load-bearing aspect is in-handler continuations (Tween, await, call_deferred), not signal-handler invocation itself.
+- ✅ Art Bible authored: `design/art/art-bible.md` (9 sections, Direction D2 + Neon-Noir fallback). **Amendment pending** for `cell_size_px = 96` propagation per Lane/Map R2 DD#4 (Open Question #8).
+- ✅ Systems index updated: row #7 Lane/Map status → Approved.
+- 🟡 ADRs: 5/7 (0001 amended for bake-failure / 0002 amended for no-path fallback / 0003 / 0004 / 0006). All MVP-blocking ADRs accounted for; ADR-0005 + ADR-0007 still live inside future GDDs.
+- ✅ GDDs: 2/28 MVP **Approved** (Run State #8, Lane / Map #7).
+- ⏳ No prototypes built yet. Lane/Map paper prototype (Open Question #4) and Steam Deck p95 bake benchmark + adjacency-cost test (Open Question #7) both gate Lane/Map story authoring.
+- ✅ Entity registry `design/registry/entities.yaml` — populated. Will need a touch when Crowd Pathfinding / Wave/Spawn / Placement & Grid / Wall/Fortification GDDs land.
 
-## Files Worked On This Session
+---
 
-- `design/gdd/systems-index.md` — created (Phase 5 of `/map-systems`), then revised after director review
-- `production/session-state/active.md` — created, then updated post-director-review, then updated post-ADR-0003, then updated post-ADR-0001-review (2026-04-28)
-- `docs/architecture/adr-0003-language-routing-policy.md` — created (lean review mode; TD-ADR gate skipped); godot-specialist validation applied (3 findings: marshalling cost added as load-bearing constraint, RefCounted vs Node guidance added, .csproj prerequisite added); 2026-04-28 retrofit: line 95 method example corrected to PascalCase
-- `docs/architecture/adr-0001-run-state-game-flow.md` — authored 2026-04-25; 2026-04-28 review-driven tightenings: process_mode verification note clarified, line 202 cross-reference updated to acknowledge ADR-0002 captures the inverse method-naming rule
-- `docs/architecture/adr-0002-crowd-pathfinding-architecture.md` — authored 2026-04-27 (untracked in git); registry-updated with 2 interface contracts, 4 API decisions, 2 forbidden_patterns
-- `docs/registry/architecture.yaml` — now 6 state-ownerships (ADR-0001), 6 interface contracts (ADR-0001 + ADR-0002 + ADR-0003), 7 API decisions (ADR-0001 + ADR-0002 + ADR-0003), 7 forbidden patterns
-- `docs/architecture/architecture-review-2026-04-28-adr-0001.md` — created 2026-04-28, focused single-ADR review report
+## Next Steps (in order)
 
-## Key Decisions Made
+1. **`/architecture-review`** — verify the full traceability matrix is coherent across the 5 ADRs after the ADR-0001 + ADR-0002 amendments. Recommended before next GDD authoring.
+2. **Steam Deck p95 bake benchmark + adjacency-cost test** (Lane/Map Open Question #7) — pre-Lane/Map-story gate.
+3. **Lane/Map paper prototype** (Open Question #4) — graph paper + hex tokens + sticky notes + d6, 30-min sessions; validates `lane_width_cells = 5`, `total_buildable_cells_mvp = 18`, and (post-R2) the 35–45° bend + bend-colocated strip readability with cold playtesters before any story is authored.
+4. **Art Bible amendment** for `cell_size_px = 96` (Open Question #8) — owned by art-director + producer.
+5. **Then** the next system in design order: **Input System #1** (`/design-system input-system`) — Foundation/Core, MVP, smaller scope (Effort: S).
 
-- **44 systems total** identified (no consolidation; 3 user-added: Adaptive Music, Camera, Run State / Game Flow)
-- **Review mode**: lean (no `production/review-mode.txt`; defaulted)
-- **TD-SYSTEM-BOUNDARY, PR-SCOPE, CD-SYSTEMS gates skipped** per lean mode
-- **Design order**: strict dependency-layer order (Foundation → Core → Feature → Presentation), MVP-tier first within each layer
-- **Bottleneck mitigations** (all four approved):
-  - Champion System — prototype Champ 1+2 with 1-2 cards before GDD freeze
-  - Run State / Game Flow — ADR required before GDD
-  - Damage & Health — `/design-review` runs twice (design + technical)
-  - Lane / Map — paper-prototype 2-lane MVP map before GDD
-- **Champion ↔ Card modifier interface**: `ModifierTarget` defined inside Champion GDD (not separate ADR)
-- **Borderline tier placements** (all confirmed in VS, not MVP): Streak/Combo, Tower Upgrade, Wall/Fortification, Save/Load, Dynamic Lighting, Tutorial
-
-## Open Questions
-
-- Should `creative-director` and `technical-director` review the systems index before GDD authoring begins? (Optional but recommended.)
-- Will the user start with the Run State ADR, the Lane paper-prototype, the Champion prototype, or the first GDD?
-
-## Next Steps (in order of recommendation)
-
-1. **Author ADR-001 Run State / Game Flow** — `/architecture-decision ADR-001`. Next in ADR order; gates GDD #1 (Run State) and 9+ dependent systems.
-2. **Author ADR-002 Crowd Pathfinding Architecture** — `/architecture-decision ADR-002`. NavigationServer2D vs flow-field vs hybrid; gates GDD #10; precedes prototype.
-3. **Author ADR-004 Juice Pipeline Integration Model** — `/architecture-decision ADR-004`. Gates GDD #9.
-4. **Author ADR-006 Save Schema & Versioning** — `/architecture-decision ADR-006`. Schema rules lock at MVP even though Save/Load GDD ships at VS.
-5. **Validate ADR coverage** — *in a fresh session* run `/architecture-review` once 4–5 ADRs are written, to check cross-ADR consistency.
-6. **Lane / Map paper-prototype** — sketch 2-lane MVP layout (gates GDD #2).
-7. **Crowd Pathfinding prototype** — after ADR-002, before GDD #10 — `/prototype crowd-pathfinding`.
-8. **Begin MVP GDDs** — `/design-system run-state-game-flow` (or `/map-systems next`).
-9. **Champion prototype** — before GDD #13 (Champion System) freezes — `/prototype champion-feel`.
+---
 
 ## Recovery Notes
 
 If this session is compacted or resumed:
-- Read `design/gdd/systems-index.md` for the full systems plan (post-director-review version)
-- Read `design/gdd/game-concept.md` for the source concept
-- 7 ADRs are required before specific GDDs — see "ADRs Required Before GDD Authoring" table in the index
-- Bottleneck mitigations are required, not optional — see High-Risk Systems table
-- System 45 (Test Harness) was added by TD review — don't forget it
 
-## Session Extract — /architecture-review 2026-04-28
-- Verdict: **PASS** (focused single-ADR review of ADR-0001)
-- Requirements (extracted from systems-index + game-concept; no GDD authored yet): 10 total — 10 covered, 0 partial, 0 gaps
-- New TR-IDs registered: None (TR registry update deferred until GDD #1 is authored — TR-IDs become stable when there is a GDD to anchor them to)
-- GDD revision flags: None
-- Cross-ADR conflicts: 1 documentation issue resolved (ADR-0003 line 95 method example corrected); 0 outstanding
-- Tightenings applied: ADR-0001 line 18 (process_mode precision); ADR-0001 line 202 (cross-ref to ADR-0002 forbidden_pattern); ADR-0003 line 95 (method PascalCase)
-- Top ADR gaps (still missing): ADR-0004 (Juice Pipeline), ADR-0005 (ModifierTarget — inside Champion GDD), ADR-0006 (Save Schema), ADR-0007 (Effect Composition Taxonomy — inside Build/Modifier GDD)
-- Report: `docs/architecture/architecture-review-2026-04-28-adr-0001.md`
+- Lane / Map #7 R2 + R2.1 + ADR amendments are COMPLETE. All blockers + recommendations resolved.
+- The next session should NOT re-run `/design-review` for Lane/Map (it's Approved).
+- The next session SHOULD run `/architecture-review` to verify the cross-ADR traceability after the 0001+0002 amendments.
+- The next system in design order is **Input System #1** — start with `/design-system input-system` after `/architecture-review` clears.
+- Do NOT begin authoring downstream Lane/Map consumer GDDs (#11/#18/#25/#27) until the Steam Deck benchmark gate (Open Question #7) is on file.
