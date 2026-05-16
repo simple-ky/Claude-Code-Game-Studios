@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: "2026-04-28"
+last_updated: "2026-05-02"  # Lane/Map R2 application: lane-map perf budget; aggregated LaneSystem.geometry_baked contract; cross_system_invariants section seeded; forbidden_pattern mutation_api_called_outside_wall_fortification added
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -272,6 +272,22 @@ interfaces:
     added: 2026-04-28
     revised: ""
 
+  - contract: lane_system_geometry_baked
+    status: active
+    pattern: signal                  # GDScript LaneSystem autoload emits; consumers connect
+    producer: lane-system            # GDScript per ADR-0003 / Lane-Map GDD
+    consumers:
+      - crowd-manager                # C# autoload per ADR-0002; first path query gated on this signal
+      - wave-spawn                   # GDScript / C#; spawn registration gated on this signal
+      - placement-grid               # GDScript; buildable cell list initialised after this signal
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    signal_signature: "geometry_baked()  # parameterless aggregate; emits ONCE after ALL lanes in the active map have completed initial bake during RUN_LOADING; emits again after EACH individual re-bake completes during WAVE_ACTIVE / WAVE_PREP. Aggregated form (per Lane/Map R2 / B5a) supersedes the R1 per-lane form. GDScript→C# auto-translation: not applicable (signal originates from GDScript side; consumers in C# subscribe via .connect())."
+    constraint: "Lane/Map R2: aggregate `LaneSystem.geometry_baked` is the cross-system contract; per-lane `lane.geometry_baked` is an internal implementation detail and NOT part of the interface. Initial-bake emission is gated on EVERY lane reaching Ready (Lane/Map cross-state constraint). Bake mode: synchronous (DD#2 — main-thread blocking call) — consumers receive the signal in a deferred callback, AFTER NavigationServer2D.map_changed has fired. Pathfinding queries before this signal return empty paths (silent failure mode); see forbidden_pattern: pathfinding_query_before_geometry_baked (to be registered when CrowdManager story lands)."
+    referenced_by:
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+      - design/gdd/lane-map-system.md       # Section C Rule 2; emitter contract
+    added: 2026-05-02
+
   - contract: save_manager_signals
     status: active
     pattern: signal                  # GDScript signals; UI subscribes
@@ -326,6 +342,30 @@ performance_budgets:
       - docs/architecture/adr-0004-juice-pipeline-integration-model.md
     added: 2026-04-27
     revised: ""
+
+  - system: crowd-pathfinding
+    status: active
+    budget_ms: 2.0
+    adr: docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    notes: "Per-frame steady state at 100 agents during WAVE_ACTIVE: spatial hash update (~0.3ms) + velocity compute loop (~0.6ms — read waypoint, normalize, separation steering) + CharacterBody2D.MoveAndSlide × 100 (~0.8ms — C++ inside engine). EXCLUDES path queries (event-driven only on placement_changed/wall_destroyed/geometry_baked; deferred to next-frame after NavigationServer2D.map_changed; ~1ms for full requery batch — does NOT compound with same-frame velocity work). Refined post-prototype per ADR-0002 Validation Criteria. Headroom check: juice (0.5) + crowd (2.0) = 2.5ms vs 16.6ms total budget — leaves 14.1ms for remaining 41 systems."
+    referenced_by:
+      - docs/architecture/adr-0002-crowd-pathfinding-architecture.md
+    added: 2026-04-28
+    revised: ""
+
+  - system: lane-map
+    status: active
+    budget_ms: 3.0
+    cost_model: episodic                     # R2.1 — per Round 2 performance-analyst Concern E + creative-director synthesis: distinguishes episodic from steady-state for /architecture-review aggregation. /architecture-review MUST NOT sum episodic budgets into the steady-state total.
+    steady_state_ms: 0.0                     # R2.1 — Lane/Map pays zero per frame in steady state; the budget is reserved for the bake event only
+    episodic_ms: 3.0                         # R2.1 — explicit episodic budget (matches budget_ms)
+    steady_state_ceiling_for_episodic_validity: 14.0  # R2.1 — per Lane/Map D.7 trigger rule: if /architecture-review aggregated steady-state budget (sum of all `steady_state_ms` from registered budgets, on Tier-2 reference hardware) exceeds 14.0 ms, lane-map mid-wave placement MUST escalate to (a) thread the bake, (b) disable mid-wave, or (c) reduce vertex budget. The 3 ms slack for the bake event is non-negotiable.
+    adr: design/gdd/lane-map-system.md       # GDD-level budget; will migrate to a Lane/Map ADR if one is authored
+    notes: "Per-mutation re-bake cost (D.7 hard constraint on `t_navpoly_rebake`) during WAVE_ACTIVE: incremental NavigationPolygon bake after one obstacle outline added (1–5 ms empirical, must benchmark on Steam Deck p95 per Open Question #7) + map_changed propagation (~0.05 ms) + path requery (~0.5–1.0 ms per lane × 2 lanes at MVP). EPISODIC cost — fires only on accepted wall mutation events, NOT every frame. Lane/Map R2 (DD#2 = Sync bake) accepts that the bake-frame may drop one frame below 60 fps (≤ 33.3 ms / ≥ 30 fps for one frame is the AC-LM-18 hard ceiling); cooldown lever (DD#1 — Rule 8 / wall_mid_wave_cooldown_seconds invariant) prevents stutter from compounding. Initial bake during RUN_LOADING is bounded by 500 ms ceiling (post-bake assertion + pre-bake outline-vertex pre-validation + adjacency-cost validation per Open Question #7 benchmark gate). R2.1 steady-state trigger rule: as downstream GDDs land and replace TBD line items in lane-map-system.md D.7 with measured budgets, /architecture-review aggregates the steady_state_ms fields; if the aggregate exceeds 14.0 ms, this entry's escalation rule fires. Cooldown protects against COMPOUND mid-wave stutter; the trigger rule protects against silent steady-state erosion."
+    referenced_by:
+      - design/gdd/lane-map-system.md       # D.7 frame budget + Section J R2/R2.1 application notes + R2.1 steady-state trigger rule
+    added: 2026-05-02
+    revised: 2026-05-02                      # R2.1 — added cost_model, steady_state_ms, episodic_ms, steady_state_ceiling_for_episodic_validity; clarified notes for steady-state trigger
 
 # Example:
 #
@@ -687,6 +727,13 @@ forbidden_patterns:
     adr: docs/architecture/adr-0006-save-schema-versioning.md
     added: 2026-04-28
 
+  - pattern: mutation_api_called_outside_wall_fortification
+    status: active
+    description: "No script outside Wall/Fortification (#27) may call `add_wall_outline()` or `remove_wall_outline()` on Lane/Map. Additionally, `NavigationRegion2D.bake_navigation_polygon()` may only be called by the Lane/Map system itself. Geometry mutation is owned exclusively by Lane/Map via Wall/Fortification's mutation calls; no shortcut access from CrowdManager, Wave/Spawn, Placement & Grid, UI, GameStateMachine, or any other system."
+    why: "Lane/Map R2 (B4 / Section H) replaces the manual-grep AC-LM-27 with this lint rule. Direct calls outside Wall/Fortification skip Placement & Grid's occupancy authority, the queue admission policy, and the cooldown invariant — re-creating the cross-system coupling Lane/Map's mutation API was designed to prevent. /architecture-review and PR review enforce automatically: `rg \"add_wall_outline|remove_wall_outline|bake_navigation_polygon\"` across `src/` must return only Lane/Map and Wall/Fortification file paths."
+    adr: design/gdd/lane-map-system.md       # Lane/Map GDD Section C Rule 7 + Section F bidirectional invariants
+    added: 2026-05-02
+
   - pattern: unguarded_json_parse_string_root
     status: active
     description: "Code that calls `JSON.parse_string(text)` MUST check that the result is non-null AND is a Dictionary before accessing keys, when the expected wire format is a Dictionary. Specifically: `if parsed == null or not parsed is Dictionary: <treat as parse failure>`. A corrupted save that happens to be valid JSON of a non-Dictionary root (`[1,2,3]`, `null`, `42`, `\"string\"`) crashes on `parsed[\"schema_version\"]` access without this guard."
@@ -713,4 +760,63 @@ forbidden_patterns:
 #     why: "Direct state writes create race conditions and break the state
 #       ownership model. The owning system must be the sole writer."
 #     adr: docs/architecture/adr-0000-architecture-principles.md
+#     added: 2026-03-26
+
+
+# ─── CROSS-SYSTEM INVARIANTS ─────────────────────────────────────────────────
+# Load-bearing invariants that span multiple systems. Each entry encodes a
+# constraint that must hold across systems for the architecture to remain valid.
+# /architecture-review checks these when it reviews any GDD that touches the
+# named systems.
+#
+# Register an invariant when one system's design relies on a baseline behavior
+# from another system that, if weakened, would break the dependent system's
+# correctness or design intent. Examples: "X assumes Y's destructibility,"
+# "A's clutch-tool design requires B's cost multiplier."
+#
+# Required fields: invariant, status, owners, statement, source, registered_by, added
+
+cross_system_invariants:
+  - invariant: lane_map_rule_9_requires_wall_destructibility
+    status: active
+    owners:
+      - lane-map                # consumer; relies on the invariant
+      - wall-fortification      # producer; must preserve the invariant
+    statement: "Wall/Fortification (#27) walls MUST be destructible (finite HP, zombie-attackable hitbox) at all times. Lane/Map's Section C Rule 9 ('walls may freely block all paths') depends on this — without destructibility, a player can build a sealed ring and trivially win, and the no-path window has no recovery mechanism."
+    source: design/gdd/lane-map-system.md       # Section F load-bearing dependency
+    registered_by: lane-map-r2
+    added: 2026-05-02
+
+  - invariant: wall_fortification_mid_wave_cost_lever_required
+    status: active
+    owners:
+      - lane-map                # design intent (Section C Rule 8)
+      - wall-fortification      # owns the lever
+    statement: "Wall/Fortification (#27) GDD MUST define `wall_mid_wave_cost_multiplier` with a default ≥ 1.5×. Without a non-trivial cost multiplier, mid-wave wall placement becomes the optimal strategy rather than a clutch tool, breaking Lane/Map Section C Rule 8's design intent."
+    source: design/gdd/lane-map-system.md       # Section C Rule 8 + Section F bidirectional invariants
+    registered_by: lane-map-r2  # promoted from R1 'referenced knob' to a real invariant per B8
+    added: 2026-05-02
+
+  - invariant: wall_fortification_mid_wave_cooldown_lever_required
+    status: active
+    owners:
+      - lane-map                # design intent (Section C Rule 8) + frame budget (D.7)
+      - wall-fortification      # owns the lever
+    statement: "Wall/Fortification (#27) GDD MUST define `wall_mid_wave_cooldown_seconds` with a default ≥ 5 seconds. The cooldown enforces 'mid-wave is a clutch tool' (Lane/Map Rule 8 design intent) AND prevents mid-wave bake stutter from compounding across consecutive placements (Lane/Map D.7 frame budget under DD#2 Sync mode). Without this cooldown, the player can spam-place walls during a wave and the engine cannot maintain 60 fps."
+    source: design/gdd/lane-map-system.md       # Section C Rule 8 + D.7 + Section F bidirectional invariants
+    registered_by: lane-map-r2  # promoted from R1 'referenced knob' to a real invariant per B8
+    added: 2026-05-02
+
+# Example:
+#
+# cross_system_invariants:
+#   - invariant: combat_requires_health_system
+#     status: active
+#     owners:
+#       - combat-system
+#       - health-system
+#     statement: "Combat damage delivery depends on Health System being active. If
+#       Health System is paused or torn down, combat must short-circuit damage."
+#     source: docs/architecture/adr-0003-combat-system.md
+#     registered_by: combat-r1
 #     added: 2026-03-26

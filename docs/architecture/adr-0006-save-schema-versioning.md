@@ -1,10 +1,15 @@
 # ADR-0006: Save Schema & Versioning
 
 ## Status
-Proposed
+Proposed (revised 2026-05-01 — `run_snapshot.save` domain removed per `design/gdd/run-state-game-flow.md` R3)
 
 ## Date
-2026-04-28
+2026-04-28 (original) / 2026-05-01 (R3 cleanup applied — suspend-save mechanism removed)
+
+## Revision History
+
+- **Original (2026-04-28)**: Authored via `/architecture-decision`. Validated by `/architecture-review` 2026-04-28 (PASS).
+- **2026-05-01 (R3 cleanup)**: GDD revision R3 removed the suspend-save mechanism entirely (reversed R2's D6/D7/D8 decisions). The `run_snapshot.save` persistent domain is therefore DELETED from this ADR — it had no implementation yet, and per R3 the run is a single session with no mid-run resume. Removed: `run_snapshot.save` row from File Layout; `"run_snapshot": 1` from `CURRENT_SCHEMA_VERSIONS`; the planned v1→v2 migration (which was driven by R2 T20-T22 — also deleted in R3); ADR-0001 dependency phrasing about "persisting the snapshot Dictionary shape." The 8 persistent domains drop to 7 (settings, meta_progression, meta_currency, leaderboard, achievements + the soft Save/Load #2 consumer; Test Harness fixture loading still uses SaveManager). All other ADR-0006 contracts (envelope format, atomicity rules, `.bak` chain, `FileAccess.store_*` return-checking, Windows remove-before-rename) are unaffected and remain authoritative.
 
 ## Engine Compatibility
 
@@ -21,23 +26,23 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Depends On** | ADR-0001 (Run State / Game Flow) — must be Accepted; this ADR persists the snapshot Dictionary shape ADR-0001 locked. |
-| **Enables** | GDD #2 (Save/Load), GDD #37 (Meta-Currency), GDD #38 (Meta-Progression), GDD #39 (Per-Champion Mastery), GDD #41 (Leaderboard), GDD #42 (Settings), GDD #44 (Achievement), GDD #45 (Test Harness fixture loading). |
+| **Depends On** | ADR-0001 (Run State / Game Flow) — must be Accepted. *(R3 update 2026-05-01)* The dependency is now LIGHT — ADR-0006 no longer persists Run State's snapshot Dictionary; per GDD R3 the run is a single session with no mid-run save. ADR-0001 still defines the canonical save-relevant rules (enum stability, JSON-serializable shape) that this ADR generalises across all persistent domains. |
+| **Enables** | GDD #2 (Save/Load — soft consumer post-R3, persists meta-currency/achievements/unlocks/settings only), GDD #37 (Meta-Currency), GDD #38 (Meta-Progression), GDD #39 (Per-Champion Mastery), GDD #41 (Leaderboard), GDD #42 (Settings), GDD #44 (Achievement), GDD #45 (Test Harness fixture loading). |
 | **Blocks** | GDD #2 (Save/Load) cannot be authored until this is Accepted. GDDs that produce persistent data shapes (#37–#42, #44) should not data-lock until this Accepts. |
-| **Ordering Note** | Author and Accept BEFORE GDD #2. Can be authored in parallel with ADR-0005 / ADR-0007 (which live inside Champion / Build-Modifier GDDs respectively). ADR-0001 → ADR-0006 chain is hard. |
+| **Ordering Note** | Author and Accept BEFORE GDD #2. Can be authored in parallel with ADR-0005 / ADR-0007 (which live inside Champion / Build-Modifier GDDs respectively). ADR-0001 → ADR-0006 chain is now soft after R3 (no run-snapshot persistence) but retained for the enum-stability + JSON-serializable rules ADR-0001 codifies. |
 
 ## Context
 
 ### Problem Statement
 
-Eight systems will write user data to disk over the project's life: Save/Load (#2 VS), Settings (#42 VS), Meta-Currency (#37 Alpha), Meta-Progression (#38 Alpha), Per-Champion Mastery (#39 Alpha), Leaderboard (#41 Alpha), Achievement (#44 Full Vision), and Test Harness fixture loading (#45 MVP). Without a shared format, versioning rule, migration policy, and corruption-recovery rule, each system would re-decide these — yielding eight incompatible serializers, eight migration backlogs, and eight independent ways to corrupt a save.
+Seven systems will write user data to disk over the project's life *(R3 reduction — was 8; the Run State snapshot domain was removed when GDD R3 deleted the suspend-save mechanism)*: Save/Load (#2 VS — now a soft consumer of Run State), Settings (#42 VS), Meta-Currency (#37 Alpha), Meta-Progression (#38 Alpha), Per-Champion Mastery (#39 Alpha), Leaderboard (#41 Alpha), Achievement (#44 Full Vision), and Test Harness fixture loading (#45 MVP). Without a shared format, versioning rule, migration policy, and corruption-recovery rule, each system would re-decide these — yielding seven incompatible serializers, seven migration backlogs, and seven independent ways to corrupt a save.
 
-ADR-0001 already locked the in-memory shape of the run snapshot Dictionary (`schema_version`, `state`, `previous_state`, `current_wave`, `champion_id`, `map_id`, `run_seed`, `started_at_unix`, `elapsed_run_seconds`) and explicitly handed off the **on-disk policy** to this ADR (ADR-0001 §307–310). The concept's Technical Risks section flags save corruption as a retention-killer ("Corrupted saves kill retention. Invest in save versioning and recovery early." — `design/gdd/game-concept.md` line 325) — making this ADR an MVP-locked forward contract even though Save/Load (#2) implements at VS.
+ADR-0001 originally handed off the **on-disk policy** for its run-snapshot Dictionary to this ADR. *(R3 update 2026-05-01)* GDD R3 removed the suspend-save mechanism entirely — the run is now a single session with no mid-run resume — so the run-snapshot Dictionary is **runtime-only**, never persisted to disk. ADR-0001 still locks the in-memory shape (used by Test Harness for assertions and by `state_snapshot_ready` consumers), but no on-disk policy is required for it. The concept's Technical Risks section still flags save corruption as a retention-killer ("Corrupted saves kill retention. Invest in save versioning and recovery early." — `design/gdd/game-concept.md` line 325) — making this ADR an MVP-locked forward contract even though Save/Load (#2) implements at VS for lifetime-persistence (meta-currency, achievements, unlocks, settings) only.
 
 ### Constraints
 
-- **Inherited from ADR-0001**: Run snapshot Dictionary has 9 named keys, all primitive-typed, JSON-serializable. The first key is `schema_version`. Any change to the snapshot Dictionary shape = `schema_version` bump + migration entry in this ADR.
-- **Inherited from ADR-0001 forbidden_pattern `inserting_game_state_enum_values`**: GameState enum values must be appended, never inserted. This rule **generalizes here**: ANY enum whose int value is persisted must follow append-only evolution; insertion is a schema-breaking change requiring a `schema_version` bump.
+- **Inherited from ADR-0001 (general format rules)**: any persistent domain's Dictionary MUST be all primitive-typed and JSON-serializable. The first key is `schema_version`. *(R3 2026-05-01: Run State's snapshot Dictionary itself is no longer one of the persistent domains — it is runtime-only. The format rules still apply to the 7 remaining persistent domains.)*
+- **Inherited from ADR-0001 forbidden_pattern `inserting_game_state_enum_values` (generalised post-R3)**: ADR-0001's GameState enum is no longer one of the persisted-enum cases (its int value was previously persisted via `run_snapshot.save`, but R3 removed that domain). The append-only-evolution principle nevertheless **generalises here** as a project-wide rule: ANY enum whose int value is persisted (e.g. `RunOutcome` in leaderboard records, future achievement-category enums) must follow append-only evolution; insertion is a schema-breaking change requiring a `schema_version` bump.
 - **Engine fact (Godot 4.4 breaking change)**: `FileAccess.store_string` (and all `store_*`) methods now return `bool`. The save-write contract MUST check return values; ignored returns are how saves silently truncate.
 - **Engine fact (Windows behavior)**: `DirAccess.rename_absolute` fails when the destination file already exists on Windows. The save flow must remove the main file (gated on `file_exists`) before renaming the `.tmp` over it. The project's primary platform is Windows; ignoring this rule means every save after the first silently fails on the target platform.
 - **Concept Tech Risks line 325**: corrupted saves kill retention; mitigation requires backup files and recovery, not just defensive coding.
@@ -69,7 +74,7 @@ ADR-0001 already locked the in-memory shape of the run snapshot Dictionary (`sch
 | `user://meta_currency.save` | Persistent currency totals | #37 Meta-Currency | Alpha |
 | `user://leaderboard.save` | Local high-score entries | #41 Leaderboard | Alpha |
 | `user://achievements.save` | Unlocked achievement IDs | #44 Achievement | Full Vision |
-| `user://run_snapshot.save` | Active run state (mid-run resume) | #2 Save/Load | VS — granularity decided in GDD #2 |
+| ~~`user://run_snapshot.save`~~ | **DELETED 2026-05-01 (GDD R3).** Was: active run state (mid-run resume). The suspend-save mechanism was removed in GDD R3 — the run is a single session. Run State's `_build_snapshot()` Dictionary remains runtime-only (used by Test Harness assertion + `state_snapshot_ready` signal); it is never written to disk. | — | — |
 | `<file>.bak` (per file above) | Backup created before each save | (auto-managed by SaveManager) | — |
 | `<file>.tmp` (per file above) | Transient pre-rename target | (auto-managed by SaveManager; cleaned on success) | — |
 | `user://corrupted_<domain>_<unix>.save` | Forensic preservation of corrupted file | (auto-managed) | — |
@@ -94,7 +99,7 @@ Each JSON file follows this canonical envelope:
 - `engine_version` (string, REQUIRED): The Godot version that wrote this file. Diagnostic.
 - `data` (object, REQUIRED): The domain-specific payload. Shape owned by the corresponding system GDD.
 
-The `run_snapshot.save` file's `data` field is the Dictionary defined by ADR-0001. The snapshot's `schema_version` from ADR-0001 IS this file's top-level `schema_version` — they are not two different fields.
+*(R3 2026-05-01: This paragraph used to describe the `run_snapshot.save` file's `data` field as the Dictionary defined by ADR-0001. That file is DELETED — the suspend-save mechanism was removed in GDD R3, so Run State's snapshot Dictionary is now runtime-only. The general envelope rule still applies to the 7 remaining persistent domains.)*
 
 ### Versioning Rules
 
@@ -147,7 +152,9 @@ const CURRENT_SCHEMA_VERSIONS: Dictionary = {
     "meta_currency":    1,
     "leaderboard":      1,
     "achievements":     1,
-    "run_snapshot":     1,  # MUST equal ADR-0001's snapshot schema_version
+    # "run_snapshot": REMOVED 2026-05-01 (GDD R3) — suspend-save mechanism deleted;
+    # the run is a single session with no mid-run resume. Run State's snapshot
+    # Dictionary is runtime-only; it does not need a persistence schema.
 }
 
 const SUPPORTED_VERSION_DEPTH: int = 2  # N-2 window
@@ -309,7 +316,7 @@ static func migrate_v1_to_v2(old: Dictionary) -> Dictionary:
 | `design/gdd/systems-index.md` (High-Risk #2) | "Concept warns: corrupted saves kill retention. Versioning + migration + recovery design." (line 327) | `.bak` fallback chain + `load_recovered_from_backup` / `load_fell_back_to_defaults` signals + corrupted-file forensic preservation directly mitigate. |
 | `design/gdd/game-concept.md` (Tech Risks) | "Save system robustness: ... Corrupted saves kill retention. Invest in save versioning and recovery early." (line 325) | Versioning per-file with N-2 window; recovery is `.bak` + defaults + warning UX; FileAccess return-value checking enforced in `SaveManager`. |
 | `design/gdd/systems-index.md` (#45 Test Harness) | "Headless run runner + deterministic RNG + fixture loader" | Test harness loads fixture saves via `SaveManager.load_domain` — same code path as production. |
-| `docs/architecture/adr-0001-run-state-game-flow.md` | "ADR-006 (Save Schema) will own: persistence policy, versioning + migration rules for `schema_version`, recovery rules for corrupted snapshots." (lines 307–310) | `run_snapshot.save` is one of the 8 domains; its `schema_version` IS the snapshot Dictionary's `schema_version`; migration integrated into per-domain runner; recovery uses same `.bak` chain. |
+| `docs/architecture/adr-0001-run-state-game-flow.md` | "ADR-006 (Save Schema) will own: persistence policy, versioning + migration rules for `schema_version`, recovery rules for corrupted snapshots." (lines 307–310) | *(R3 2026-05-01)* The `run_snapshot.save` domain has been DELETED — GDD R3 removed the suspend-save mechanism, so Run State's snapshot Dictionary is runtime-only. ADR-0001's enum-stability + JSON-serializable rules still generalise to all 7 remaining persistent domains; the per-domain `.bak` chain + envelope + atomicity rules apply uniformly. |
 
 ## Performance Implications
 
@@ -357,20 +364,20 @@ This ADR is forward-looking — there is no existing save format to migrate FROM
 This ADR is correct if, at GDD #2 (Save/Load) authoring:
 - Every persistent system GDD references `SaveManager.save_domain` / `load_domain` — no system has its own serializer.
 - No domain has been retrofitted to add its own version field, migration, or `.bak` handling.
-- At least one schema bump (v1 → v2) has been performed via the documented procedure, and the migration test passes.
+- At least one schema bump (v1 → v2) has been performed via the documented procedure on a synthetic test domain, and the migration test passes. *(R3 2026-05-01: the original validation criterion required this on a real domain — `run_snapshot` was the planned candidate. With `run_snapshot` deleted in R3, the bump-procedure exercise can be done on a Test Harness fixture domain instead. The procedure must still be exercised end-to-end before this ADR Accepts.)*
 - Test harness loads fixtures using the same SaveManager API as production.
 - Corruption-recovery acceptance test (Migration Plan §1) passes on every CI run.
 - Windows rename-over-existing test (Migration Plan §1) passes on every CI run.
 - No P0/P1 save-corruption bugs in playtest.
 
 This ADR is wrong if:
-- The single-file alternative would have been simpler than maintaining 6+ files and migrations through Alpha.
+- The single-file alternative would have been simpler than maintaining 5+ files and migrations through Alpha. *(R3 2026-05-01: was 6+; reduced by one with `run_snapshot` deletion.)*
 - 0 schema bumps after 6 months post-MVP development (over-engineered the migration window).
 - Players hit corruption-recovery paths frequently enough that `.bak` chain isn't enough (would force escalation to cloud save in V1.x).
 
 ## Related Decisions
 
-- **ADR-0001 (Run State / Game Flow)** — Locks in-memory snapshot Dictionary shape; this ADR locks on-disk persistence policy. Coupled via the snapshot's `schema_version` field.
+- **ADR-0001 (Run State / Game Flow)** — Locks in-memory snapshot Dictionary shape (used by Test Harness assertions and `state_snapshot_ready` consumers). *(R3 2026-05-01)* The on-disk persistence path for Run State has been removed — the suspend-save mechanism was cut in GDD R3. ADR-0001's enum-stability rule (append-only enum values) still informs this ADR's general `inserting_persisted_enum_values` forbidden pattern, but no `schema_version` coupling between the two ADRs exists post-R3.
 - **ADR-0002 (Crowd Pathfinding)** — No interaction; pathfinding state is regenerated each wave, not persisted.
 - **ADR-0003 (Language Routing Policy)** — SaveManager is GDScript (not C#); persistent state crosses the language boundary by being snapshotted on the GDScript side via `state_changed` handlers. C# hot-path systems (Damage, CrowdManager, Wave) do not write directly to disk.
 - **ADR-0004 (Juice Pipeline)** — No persisted state; ADR-0004 line 27 explicitly notes "Juice owns no persisted state". JuiceProfile resources ship under `res://`, not `user://`. The JSON-config-vs-save-data carve-out (Risk 7) reconciles ADR-0004's anti-JSON stance with this ADR's pro-JSON-for-saves stance.

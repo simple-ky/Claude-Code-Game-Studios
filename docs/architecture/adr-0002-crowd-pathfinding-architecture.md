@@ -1,10 +1,16 @@
 # ADR-0002: Crowd Pathfinding Architecture
 
 ## Status
-Proposed
+Proposed (Wall-Block No-Path Fallback amendment 2026-05-02 from `design/gdd/lane-map-system.md` R2.1)
 
 ## Date
-2026-04-27
+2026-04-27 (original) / 2026-05-02 (Wall-Block No-Path Fallback amendment per Lane/Map R2.1 Open Question #9)
+
+## Revision History
+
+- **Original (2026-04-27)**: Authored via `/architecture-decision`. Validated by `/architecture-review` 2026-04-28 (PASS).
+- **2026-04-28**: `architecture.yaml` populated with `crowd-pathfinding` performance budget (2.0 ms/frame at 100 agents).
+- **2026-05-02 (Wall-Block No-Path Fallback)**: Amendment propagated from `design/gdd/lane-map-system.md` R2.1 / decision log Section G. Adds new "Wall-Block No-Path Fallback" subsection specifying CrowdManager behavior when `query_path()` returns a path that does not reach the goal (legitimate no-path case from Lane/Map Rule 9). The original ADR only addressed Risk 11 (first-query race condition); this amendment closes Lane/Map Open Question #9. Behavior contract: use truncated path as-is, do NOT fire `agent_reached_target` until goal is reached, retry policy stays event-driven (no per-frame requery), zombie behavior at truncated terminus owned by Zombie AI (#17) + Combat (#13/#27). "No zombie permanently stuck" guarantee codified.
 
 ## Engine Compatibility
 
@@ -257,6 +263,38 @@ public partial class CrowdManager : Node
 
 GDScript callers use the autoload path (`/root/CrowdManager`) directly via signal connection; the `Instance` accessor is C#-internal only.
 
+### Wall-Block No-Path Fallback (amendment 2026-05-02 — applied per Lane/Map R2.1 / `/propagate-design-change`)
+
+> **Source**: `design/gdd/lane-map-system.md` R2.1 Section C Rule 9 + Section E Edge Cases + Section F Dependencies + Open Question #9; locked decision `DD#3 = Idempotent overwrite` 2026-05-02.
+
+Lane/Map's Section C Rule 9 ("walls may freely block all paths") accepts that a wall mutation can legitimately leave **zero path** from a zombie's current cell to its goal. The original ADR-0002 only addressed the race condition between bake completion and first query (Risk 11 — "first path query before navmesh rebuilt → empty path"), NOT the case where a wall mutation legitimately blocks the lane. CrowdManager owns the no-path fallback behavior; this section is the contract.
+
+#### Behavior when `query_path()` returns a path that does not reach the goal
+
+Godot's `NavigationServer2D` with `NavigationPathQueryParameters2D` returns a path that ends at the closest navmesh point reachable from the start when the goal is fully obstructed. CrowdManager treats this as the canonical no-path case:
+
+1. **Use the truncated path as-is**. The agent paths to the closest reachable cell adjacent to the obstructing wall and stops there (terminal waypoint reached → `Velocity = Vector2.Zero`). CrowdManager does NOT mark the agent as "stuck" or "errored" — the truncated path IS the correct path under Lane/Map Rule 9.
+2. **Do NOT fire `agent_reached_target`** (the agent did not reach its registered goal — it reached a waypoint adjacent to the obstruction). Agents queryable via `IsAtGoal: bool` flag (false when only at truncated terminus).
+3. **What the zombie does next is owned by Zombie AI (#17) + Combat (#13/#27)**, NOT CrowdManager. Per Lane/Map's Edge Case prose: "Zombies in the lane will arrive at the closest reachable cell to the goal and engage the wall via Combat." CrowdManager's role ends at "moved the agent to the truncated path's end and stopped"; the wall-attack behavior lives in Zombie AI's GDD when authored.
+
+#### Retry policy (event-driven only — NEVER per-frame)
+
+Once a CrowdAgent's path is truncated, CrowdManager does NOT requery the path on every frame. Per-frame requery would burn the per-frame budget for no signal value (the obstruction will not move until a wall mutation event). Requeries fire **only** on:
+
+- `placement_changed` (a tower/unit was placed or removed)
+- `wall_destroyed` (a wall's HP hit 0; Lane/Map has called `remove_wall_outline` and re-baked)
+- `geometry_baked` (any other geometry change)
+
+Followed by `NavigationServer2D.map_changed` (the bake-complete signal) gating the actual `query_path()` call. The existing Path Query Trigger Set covers these — this amendment makes explicit that the same trigger set serves the no-path-recovery case (no separate "stuck zombie" requery event needed).
+
+#### "No zombie permanently stuck" guarantee
+
+When `wall_destroyed` fires (because zombies attacking the wall have depleted its HP per Combat), Lane/Map calls `remove_wall_outline` → re-bakes → `geometry_baked` → `NavigationServer2D.map_changed` → CrowdManager's deferred requery fires for the affected lane → the path now reaches the goal → agent's `Velocity` updates on the next per-frame cycle. AC for this behavior is owned by Wall/Fortification's GDD when authored (per Lane/Map R2.1 Section F cross-system AC re-authoring tracker — replaces the deleted Lane/Map AC-LM-23). The guarantee is: no zombie remains at a truncated terminus after the obstruction is removed and `map_changed` has fired.
+
+#### Implementation note
+
+Track per-agent state via a `bool _isAtTruncatedTerminus` flag on `CrowdAgent`, set in the velocity-update loop when the agent reaches the path's terminal waypoint AND that waypoint is NOT the registered goal. Clear the flag on the next successful path query that returns a path reaching the goal. The flag is C#-internal; not exposed across the language boundary (zombie behavior at truncated terminus is owned by Zombie AI, which observes `Velocity == Vector2.Zero` directly via the `agent_reached_target` non-emission).
+
 ### Key Interfaces
 
 ```csharp
@@ -471,7 +509,7 @@ This ADR is incorrect (warrants superseding ADR) if any of:
 
 ## Related Decisions
 
-- **ADR-0003 (Language Routing Policy — Proposed)** — Crowd Pathfinding routed to C# per criterion 1 (>50 entities/frame). Cross-language signal/method-call rules followed verbatim. The boundary naming rules (signals → snake_case, methods → PascalCase) refine ADR-0003's Cross-Language Boundary Contract; ADR-0003 should be retrofit-edited to remove the incorrect snake-case method example (a known follow-up per `production/session-state/active.md`).
+- **ADR-0003 (Language Routing Policy — Proposed)** — Crowd Pathfinding routed to C# per criterion 1 (>50 entities/frame). Cross-language signal/method-call rules followed verbatim. The boundary naming rules (signals → snake_case, methods → PascalCase) jointly refine ADR-0003's Cross-Language Boundary Contract: ADR-0003 line 95's method example was corrected to PascalCase form (`BuildModifier.ComputeStats(input)`) during the 2026-04-28 architecture review, and ADR-0002's `csharp_method_snakecase_in_gdscript_call` forbidden_pattern (combined with ADR-0001's inverse `csharp_signal_pascalcase_in_gdscript_connect`) codifies the full boundary naming rule going forward.
 - **ADR-0001 (Run State / Game Flow — Proposed)** — `state_changed` signal subscription gates per-frame velocity update; pause respect is delegated to the manager. Forbidden pattern `csharp_signal_pascalcase_in_gdscript_connect` registered by ADR-0001 is the inverse of the new pattern this ADR proposes (`csharp_method_snakecase_in_gdscript_call`); together they codify the full boundary naming rule.
 - **ADR-006 (Save Schema — pending)** — Crowd Pathfinding has no persistent state by design (agents are transient; recreated on `RUN_LOADING`). No save schema entries.
 - **ADR-007 (Effect Composition Taxonomy — pending, inside Build/Modifier GDD)** — orthogonal; modifier effects on movement speed (`agent.MoveSpeed`) are the only intersection. Build/Modifier writes to `agent.MoveSpeed` via the standard `ModifierTarget` contract (ADR-005 inside Champion GDD), not via Crowd Pathfinding's API.
