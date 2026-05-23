@@ -35,12 +35,12 @@ dist/
 *.dylib
 *.app
 
-# === Engine: Godot ===
-.godot/
-*.translation
-export_presets.cfg
-# Uncomment if using Godot:
-# *.import
+# === Engine: Godot (scoped to game/ subfolder) ===
+game/.godot/
+game/*.translation
+game/export_presets.cfg
+game/*.import
+game/prototypes/
 
 # === Engine: Unity ===
 [Ll]ibrary/
