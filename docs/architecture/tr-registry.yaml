@@ -24,33 +24,379 @@
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
-version: 1
-last_updated: ""
+version: 2
+last_updated: "2026-05-16"  # First-time population from /architecture-review 2026-05-16; covers Run State #8 + Lane/Map #7 (both Approved). Other systems' TRs deferred to their GDD-authoring time per 2026-04-28 review policy.
 
-requirements: []
+requirements:
 
-# --- EXAMPLE ENTRIES (remove when first real entries are added) ---
+  # ─────────────────────────────────────────────────────────────────────────
+  # RUN STATE / GAME FLOW SYSTEM (#8) — Approved 2026-05-01 (R3)
+  # Source: design/gdd/run-state-game-flow.md
+  # Governing ADR: docs/architecture/adr-0001-run-state-game-flow.md
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - id: TR-runstate-001
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "The 9-value GameState enum (MAIN_MENU..RUN_RESULTS) is append-only — inserting a new state mid-list silently corrupts persisted snapshots whose state:int field references the old position. New states added at end (index 9+)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-002
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "Exactly one GameState is active at any moment; no phase overlap. Transitions are validated against the VALID_TRANSITIONS dictionary; invalid transitions are rejected with a push_warning and no state change occurs."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-003
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "Pause is orthogonal to phase. pause() is reachable from any in-run state (RUN_PREP, WAVE_ACTIVE, WAVE_RESULTS, CARD_ROLL) and stores previous_state. resume() restores previous_state. Both bypass VALID_TRANSITIONS. Both return bool (true on success)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-004
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "Wave System's C# [Signal] WaveCompleteEventHandler connects to GDScript GameStateMachine via typed Callable as wave_complete (snake_case auto-translation). Fires exactly once per wave end. If pause is active when wave_complete fires, _pending_wave_complete is queued and replayed on resume via call_deferred."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-005
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "quit_run(outcome: int) -> bool is a public API method that bypasses VALID_TRANSITIONS and transitions directly to RUN_RESULTS with outcome = QUIT. Callable from any in-run state (RUN_PREP, WAVE_ACTIVE, WAVE_RESULTS, CARD_ROLL, RUN_PAUSED, RUN_LOADING). Always emits run_ended(outcome)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-006
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "RunOutcome enum has three values { VICTORY, DEFEAT, QUIT }. Priority on race conditions: VICTORY > DEFEAT > QUIT, resolved via _pending_outcome field with deferred end-of-frame resolution."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-007
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "get_displayed_wave_number(state_override: int = current_state) -> int centralises the state-conditional wave-display rule. Returns current_wave+1 in RUN_PREP, current_wave in WAVE_ACTIVE/WAVE_RESULTS/CARD_ROLL, 0 in menus/loading/paused/results. Output clamped to waves_per_run."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-008
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "current_wave increments on entry to WAVE_RESULTS (when wave_complete fires). On defeat path (HP=0 mid-wave), current_wave increments immediately before run_ended(DEFEAT) fires so the leaderboard reports the correct wave-of-death."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-009
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "CARD_ROLL is skippable — the player may transition CARD_ROLL → RUN_PREP without picking a card. card_picked emission is gated on current_state == CARD_ROLL; emissions outside that window are rejected with a warning."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-010
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "RUN_PREP has no minimum-duration floor (tk_prep_floor deleted per R2 D1). action_wave_start input advances to WAVE_ACTIVE within one frame at any elapsed time. tk_prep_ceiling AFK timeout auto-advances unattended runs."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-011
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "WAVE_RESULTS auto-advance: 1.5 seconds for waves 1–9 (transition to CARD_ROLL or direct to RUN_RESULTS on defeat); 3.0 seconds for wave 10 victory (boss-kill beat, R3 addition; transition to RUN_RESULTS). Durations not player-tunable."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-012
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "Phase-pacing values (tk_prep_ceiling, tk_wave_results_auto_advance, anti-AFK timeouts, tk_waves_per_run) are tuning knobs in RunStateConfig.tres. Config is re-read per transition so live-tune changes take effect on the next phase entry."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-013
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "Phase timers (phase_entered_at) and active-elapsed time (F4 active_elapsed, F5 total_paused_seconds, F6 phase-timer offset) exclude pause time. pause() records phase_pause_started_at; resume() offsets phase_entered_at forward by the pause duration so F2's ceiling counts only active phase time."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-014
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "state_snapshot_ready fires on every transition with a JSON-serializable Dictionary (schema_version, state, previous_state, current_wave, champion_id, map_id, run_seed, started_at_unix, elapsed_run_seconds, phase_entered_at, phase_pause_started_at, total_paused_seconds). load_snapshot() rejects corrupted snapshots (RUN_PAUSED with previous_state == STATE_NONE; current_wave > waves_per_run)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-015
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "Test Harness (#45) drives GameStateMachine in --headless mode via transition_to() and load_snapshot() public methods. Deterministic state sequences without requiring scene-tree _ready() or a full SceneTree."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-016
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "load_snapshot() suppresses state_changed emission and instead emits state_loaded(snapshot) so consumers (notably Adaptive Music) can distinguish fresh-transition handling from snapshot-restoration handling — prevents spurious crossfades on load."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-017
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "External pause (Steam overlay, Alt-Tab, OS focus loss) is handled via _notification(NOTIFICATION_APPLICATION_FOCUS_OUT/IN) firing synthetic pause()/resume(). Documented fallback (per GDD Pre-implementation verifications #6): if focus notifications fail on Windows D3D12 borderless mode, autoload polls DisplayServer.window_is_focused() at ~10 Hz from _process()."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-018
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "quit_run(QUIT) while previous_state == CARD_ROLL (or current_state == CARD_ROLL) triggers a confirmation dialog with locked text: \"Quit run? You'll lose this run's build, but unlocks and lifetime currency are saved.\" Other in-run states quit without confirmation."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-019
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "previous_state is declared as int (NOT GameState enum) with class constant STATE_NONE = -1. The int typing prevents silent coercion to 0 (= MAIN_MENU) on strict-typed builds, which would mask save-load corruption checks."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-020
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "Consumer connection contract: typed Callable form only (string-based connect forbidden). All 12 consumer autoloads connect to GameStateMachine signals lazily in their own _ready(); is_connected() guard on _exit_tree() prevents orphaned connections. Project Settings autoload order: consumers AFTER GameStateMachine."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-021
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "Pillar 4 felt experience (ADVISORY): pause overlay holds state indefinitely without time pressure. Player can read card descriptions for ≥60 seconds in WAVE_ACTIVE pause without enemy advancing, wave timer decrementing, or resource value changing. Manual playtest sign-off in production/qa/evidence/."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-runstate-022
+    system: run-state
+    gdd: design/gdd/run-state-game-flow.md
+    requirement: "RUN_LOADING → MAIN_MENU is an allowed transition triggered by Lane/Map's bake_pre_validation_failed(lane_id, reason) or bake_failed(lane_id, reason) signal during RUN_LOADING. No live-abort timer (sync bake blocks main thread). 500ms RUN_LOADING ceiling enforced via pre-bake outline-vertex validation + post-bake Steam Deck p95 benchmark assertion (story-Done gate, not runtime abort)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # LANE / MAP SYSTEM (#7) — Approved 2026-05-02 (R2.1)
+  # Source: design/gdd/lane-map-system.md
+  # Governing: Lane/Map GDD itself (no dedicated ADR); cross-system contracts
+  # codified in ADR-0001 (state graph), ADR-0002 (geometry consumer side),
+  # ADR-0003 (language routing), and architecture.yaml registry.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - id: TR-lanemap-001
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "A map is a named container of lane instances (V1 range: 2–3 lanes). The map root carries only display_name: String and lanes: Array[Node]; no NavigationRegion2D, no NavigationPolygon, no world-position exports. All geometry is owned by child lane nodes."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-002
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "A lane is a Node2D-rooted scene with: NavigationRegion2D (owns baked NavigationPolygon), SpawnZone marker, GoalZone marker, and three TileMapLayer siblings (terrain_visual, collision, buildable_marks). Per-lane exports: lane_id, goal_zone_center, spawn_zone_center, spawn_zone_radius (default 64px), lane_width_cells (MVP: 5), buildable_cells: Array[Vector2i] (immutable for the run)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-003
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Lanes within a map are independent. No cross-lane geometry coupling. Each lane's spawn zone, goal zone, and NavigationPolygon are isolated; a re-bake on lane B does not modify lane A's polygon or re-emit lane A's geometry_baked signal."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-004
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "MVP map has exactly 2 parallel lanes with distinct spawn zones and distinct goal zones. Each lane's NavigationRegion2D operates independently of the sibling lane."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-005
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Each lane has one sharp bend at ~60% lane depth with 35–45° inflection angle. Bend verified via NavigationServer2D query_path() direction-change measurement at adjacent path waypoints in the 55–65% path-length window (engine-stable, not via internal vertex layout)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-006
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Buildable cells form a discrete grid strip at 40–65% lane depth, surrounding the bend at bend_depth_fraction = 0.60. MVP total: 18 cells across 2 lanes (9 per lane); strip depth ≤ 3 rows hard cap. List is fixed at scene-authoring time and immutable for the run."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-007
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Lane/Map owns NavigationPolygon geometry exclusively. Mutation API: add_wall_outline(lane_id: int, polygon: PackedVector2Array, cell_ref: Vector2i) -> bool, remove_wall_outline(lane_id: int, cell_ref: Vector2i). Only Wall/Fortification (#27) may call (forbidden_pattern: mutation_api_called_outside_wall_fortification). Internal cell_ref → outline_index mapping required for NavigationPolygon.remove_outline(idx)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-008
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Walls may be placed during BOTH WAVE_PREP and WAVE_ACTIVE. Mid-wave placement is a clutch tool, not the optimal strategy. wall_mid_wave_cost_multiplier ≥ 1.5× and wall_mid_wave_cooldown_seconds ≥ 5s are invariants registered in architecture.yaml cross_system_invariants; Wall/Fortification owns the concrete values."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-009
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Walls may freely block all paths. Lane/Map performs no path-validity check. A run state with zero path from spawn to goal is legal — zombies attack walls via Combat/Wall HP rules; CrowdManager handles the no-path case per ADR-0002 Wall-Block No-Path Fallback (truncated path; no agent_reached_target emission; event-driven retry)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-010
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Wall removal is unconditional. remove_wall_outline always succeeds and is idempotent — removing a non-existent cell_ref completes silently with no error logged, no state change, and no re-bake triggered."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-011
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Mutation requests during in-flight bake are queued FIFO with dedup-overwrite on (lane_id, cell_ref) match. max_queue_depth = 8; admission failure returns false (caller can retry after bake completes). Queue is single-threaded under DD#2 sync bake. On run abort, queue is freed atomically with the lane scene — no deferred consumer fires on a freed node."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-012
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Locked geometric formulas at cell_size_px = 96 (DD#4): D.1 cell_to_world(cell_ref) = grid_origin + (cell_ref × 96) + Vector2(48, 48); D.2 world_to_cell is the inverse; D.3 lane_width_px = lane_width_cells × cell_size_px = 480 px at MVP defaults (5 cells × 96 px)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-013
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "D.4: NavigationServer2D query_path() returns a spawn-to-goal path whose total length matches the geometric approximation within ±10% tolerance. The runtime path hugs the outer wall of bends; ±10% accounts for path-following overhead beyond the pure geometric formula."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-014
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "D.5: Buildable strip row depth ≤ 3 rows hard cap. strip_rows_needed = ceil(cells_per_lane / lane_width_cells); MVP: 9/5 = 2 rows. total_buildable_cells must satisfy total_buildable_cells % lane_count == 0."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-015
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "D.6 initial bake budget (ADVISORY benchmark): each lane bake ≤ 15 ms; total RUN_LOADING window ≤ 500 ms. Measured on pinned hardware (Steam Deck OLED p95 PRIMARY; 2019-class laptop SECONDARY) per technical-preferences.md. 300-frame measurement window; profiler OFF; Time.get_ticks_usec() instrumentation."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-016
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "D.7 mid-wave re-bake budget: t_navpoly_rebake ≤ 3 ms hard cap. Bake-frame may drop to ≥ 30 fps (≤ 33.3 ms) for one frame; steady-state stays at 60 fps (≤ 16.6 ms). DD#1 cooldown invariant (wall_mid_wave_cooldown_seconds) prevents compound stutter across consecutive placements. Registered as cost_model: episodic in architecture.yaml; not summed into steady-state budget."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-017
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Aggregate LaneSystem.geometry_baked() signal is emitted ONCE after ALL lanes in the active map complete initial bake during RUN_LOADING, and ONCE after each individual re-bake completes during WAVE_ACTIVE/WAVE_PREP. The aggregate form is the cross-system contract (per architecture.yaml lane_system_geometry_baked); per-lane signals are internal to the lane scene."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-018
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "GameStateMachine RUN_LOADING → WAVE_PREP transition is gated on aggregate LaneSystem.geometry_baked emission. All lanes must complete initial bake before the transition can occur; partial state is not exposed to consumers."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-019
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Bake-failure abort path: pre-bake outline-vertex pre-validation may emit bake_pre_validation_failed(lane_id, reason); engine-level bake failure may emit bake_failed(lane_id, reason). Both trigger GameStateMachine transition RUN_LOADING → MAIN_MENU (per ADR-0001 amendment 2026-05-02). 500ms RUN_LOADING ceiling is enforced via pre-bake validation + post-bake Steam Deck p95 assertion, NOT a runtime live-abort timer (sync bake blocks main thread)."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-020
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Bidirectional ordering guarantees: CrowdManager makes zero NavigationServer2D path queries before LaneSystem.geometry_baked; Wave/Spawn instantiates zero zombies before LaneSystem.geometry_baked emits the initial-bake aggregate. Mutation API rejected with false during RUN_LOADING and while any lane is in Baking state."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+  - id: TR-lanemap-021
+    system: lane-map
+    gdd: design/gdd/lane-map-system.md
+    requirement: "Pillar 4 cold-player wall-placement readability (ADVISORY playtest): ≥ 7 of 10 first-time playtesters place their final wall (placement at countdown=0) within 2 cells of the bend chokepoint inside the buildable strip's bend-colocated zone. Facilitator-scripted observation; no verbal instruction. Logged per playtester in production/qa/evidence/."
+    created: 2026-05-16
+    revised: ""
+    status: active
+
+# --- TR slots reserved for future systems (suggested-only per 2026-04-28 review;
+# graduate to active entries when each GDD is authored):
 #
-# - id: TR-combat-001
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Player takes damage from enemies based on attack power minus defence"
-#   created: 2026-03-10
-#   revised: ""
-#   status: active
+#   crowd-pathfinding   → TR-crowdpath-001..007    (anchor: future GDD #11)
+#   language-routing    → TR-langrouting-001..009  (anchor: ADR-0003 — cross-cutting)
+#   juice-pipeline      → TR-juice-001..009        (anchor: future GDD #9)
+#   save-schema         → TR-savescheme-001..011   (anchor: future GDD #2)
+#   test-harness        → TR-testharness-001..004  (anchor: future GDD #45)
 #
-# - id: TR-combat-002
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Combo window timing is 0.4 seconds between hits"
-#   created: 2026-03-10
-#   revised: "2026-04-01"
-#   status: active
-#
-# - id: TR-combat-003
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Old damage formula using raw stats"
-#   created: 2026-03-10
-#   revised: ""
-#   status: superseded-by: TR-combat-001
+# These remain *suggested* until their respective GDDs are authored. Persisting
+# now risks renumbering churn when GDDs refine wording. See
+# docs/architecture/architecture-review-2026-04-28-full.md Phase 2 for the
+# suggested set.
