@@ -29,3 +29,7 @@ Always cross-reference this directory before suggesting Godot API calls.
 - 4.4→4.5 migration: https://docs.godotengine.org/en/stable/tutorials/migrating/upgrading_to_godot_4.5.html
 - Changelog: https://github.com/godotengine/godot/blob/master/CHANGELOG.md
 - Release notes: https://godotengine.org/releases/4.6/
+
+## Companion Files
+
+- [`UI-NAVIGATION.md`](UI-NAVIGATION.md) — Editor UI / menu / dock layout for 4.6.2. **Required reading before invoking `mcp__godot__*` editor tools or writing step-by-step click instructions** for the user (4.4/4.5/4.6 reorganized the editor UI significantly compared to pre-cutoff training data).

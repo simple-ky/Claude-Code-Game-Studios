@@ -10,6 +10,17 @@
 - **Rendering**: Forward+ (desktop) — default for Godot 4.6 on Windows
 - **Physics**: Jolt (default in 4.6)
 
+## Godot Editor UI Guidance
+
+<!-- Added 2026-05-23 — prevents Claude from giving outdated click-paths based on pre-4.4 training data. -->
+<!-- Read by every agent before invoking mcp__godot__* tools or writing step-by-step editor instructions. -->
+
+**Before invoking any `mcp__godot__*` tool that targets the editor UI, or before writing step-by-step click instructions for the user in the Godot editor, consult [`docs/engine-reference/godot/UI-NAVIGATION.md`](../../docs/engine-reference/godot/UI-NAVIGATION.md).**
+
+- Do **NOT** rely on training-data memory of Godot's editor layout. The LLM's training cutoff is May 2025 (~Godot 4.3), and 4.4/4.5/4.6 reorganized docks, renamed modes, restored panels, and introduced a unified docking system. Pre-cutoff click-paths will silently misdirect the user.
+- When in doubt about a menu path or dock location, ask the user to confirm what they see on screen rather than guess.
+- If UI-NAVIGATION.md does not cover the specific UI element you need, fetch the relevant page from `https://docs.godotengine.org/en/4.6/` (NOT `/en/stable/` — pin the version) and add the verified information to UI-NAVIGATION.md before continuing.
+
 ## Input & Platform
 
 <!-- Written by /setup-engine. Read by /ux-design, /ux-review, /test-setup, /team-ui, and /dev-story -->
