@@ -44,8 +44,8 @@
 #     /architecture-review reads that.
 #   Do not put interface contracts here; do not put numeric constants there.
 
-version: 1
-last_updated: "2026-05-02"
+version: 3
+last_updated: "2026-05-23"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -141,6 +141,33 @@ formulas:
     added: 2026-05-02
     revised: ""
 
+  - name: cursor_world_pos_transform
+    status: active
+    source: design/gdd/input-system.md
+    referenced_by:
+      - design/gdd/input-system.md           # D.1 — definition, Rule 5
+      - design/gdd/lane-map-system.md        # consumes world_pos via Placement & Grid pass-through (line 229)
+      # Placement & Grid (#25) and Wall/Fortification (#27) GDDs will be
+      # appended when authored — they are the direct consumers of cursor_world_pos.
+    variables:
+      - mouse_screen_pos      # Vector2, viewport-relative, [0, viewport_size_px]
+      - canvas_transform      # Transform2D, from get_viewport().get_canvas_transform()
+    output_range: ["-inf", "+inf"]    # componentwise; unbounded by formula; bounded by Camera2D limits in practice
+    expression: |
+      canvas_transform = get_viewport().get_canvas_transform()
+      mouse_screen_pos = get_viewport().get_mouse_position()
+      cursor_world_pos = canvas_transform.affine_inverse() * mouse_screen_pos
+    notes: >
+      Screen-to-world cursor transform for InputBus.cursor_world_pos. Uses
+      Viewport-level canvas transform (NOT Camera2D node's transform) to
+      correctly incorporate Camera2D zoom AND to remain null-safe during
+      RUN_LOADING before a Camera2D is added to the scene. Evaluated once
+      per InputBus._process frame. Consumers (Placement & Grid #25,
+      Wall/Fortification #27, Lane/Map #7 mutation API) are responsible
+      for clamping to their valid regions. Input GDD Section D.1.
+    added: 2026-05-16
+    revised: ""
+
 
 # ─── CONSTANTS ───────────────────────────────────────────────────────────────
 # Named numerical values referenced across multiple systems.
@@ -156,18 +183,21 @@ constants:
     source: design/gdd/lane-map-system.md
     referenced_by:
       - design/gdd/lane-map-system.md
+      - design/gdd/camera-system.md    # D.2 (lane corridor check), D.4 (WAVE_PREP offset), D.5 (safety margin cell count)
       # Pipeline-binding. Will be referenced by every per-asset spec in
       # design/art/asset-specs/, plus Placement & Grid (#25), Wave/Spawn
-      # (#18) for sprite-scale, Camera (#6), HUD GDD when authored.
-    value: 64
+      # (#18) for sprite-scale, HUD GDD when authored.
+    value: 96
     unit: pixels
     notes: >
       Pipeline-binding: every sprite is sized against this value. Do NOT
-      change after MVP art begins. Smaller (32) quadruples bake outline
-      density and risks D.7 budget. Larger (96+) overflows 1080p
-      viewport. Locked by Lane/Map GDD Section D and Tuning Knobs.
+      change after MVP art begins. Locked at 96 by Lane/Map GDD R2 DD#4
+      (2026-05-02); previous value was 64 (changed for readability at
+      target zoom and Steam Deck viewport). Camera GDD Section D uses 96
+      throughout (D.2: 2×5×96=960px corridor; D.4: 2×96=192px WAVE_PREP
+      offset; D.5: 533px ÷ 96 ≈ 5.6 cells safety margin).
     added: 2026-05-02
-    revised: ""
+    revised: "2026-05-16"  # 64 → 96, per Lane/Map R2 DD#4; registry was stale
 
   - name: lane_count_mvp
     status: active
@@ -345,4 +375,139 @@ constants:
       t_navpoly_rebake > 3 ms in profiling, mid-wave placement must
       throttle, move to a thread, or be disabled. Lane/Map GDD D.7.
     added: 2026-05-02
+    revised: ""
+
+  - name: input_menu_initial_delay_ms
+    status: active
+    source: design/gdd/input-system.md
+    referenced_by:
+      - design/gdd/input-system.md           # D.2 + Section G — definition
+      # Settings (#42) and Accessibility (#43) will surface as player slider
+      # at VS/Alpha respectively; append when authored.
+    value: 300
+    unit: milliseconds
+    notes: >
+      Delay before the first synthetic repeat fires after holding a
+      menu-navigation action key (action_ui_navigate_*). Safe range
+      [200, 500]; below 200 risks accidental repeats on quick taps,
+      above 500 feels sluggish. Designer-owned at MVP; Accessibility #43
+      may expose as a player slider at Alpha (Q7 in Input GDD Open
+      Questions). Constraint: initial_delay_ms >= repeat_interval_ms.
+      Input GDD Section D.2 and Section G.
+    added: 2026-05-16
+    revised: ""
+
+  - name: input_menu_repeat_interval_ms
+    status: active
+    source: design/gdd/input-system.md
+    referenced_by:
+      - design/gdd/input-system.md           # D.2 + Section G — definition
+      # Settings (#42) and Accessibility (#43) will surface as player slider
+      # at VS/Alpha respectively; append when authored.
+    value: 100
+    unit: milliseconds
+    notes: >
+      Interval between subsequent synthetic repeat events after the
+      initial delay, while a menu-navigation action key is held. Safe
+      range [80, 200]; below 80 the player cannot read list items as
+      they scroll past, above 200 fast-scroll feels slow. Designer-owned
+      at MVP; Accessibility #43 may expose as a player slider at Alpha.
+      Constraint: input_menu_repeat_interval_ms <= input_menu_initial_delay_ms.
+      Input GDD Section D.2 and Section G.
+    added: 2026-05-16
+    revised: ""
+
+  - name: gamepad_deadzone_inner
+    status: active
+    source: design/gdd/input-system.md
+    referenced_by:
+      - design/gdd/input-system.md           # D.3 + Section G — definition
+      # Settings (#42) will surface as a player slider at VS;
+      # Accessibility (#43) may lift safe-range ceiling to 0.30 at Alpha.
+      # Player Controller (#14) consumes get_movement_vector() output.
+    value: 0.15
+    unit: unitless_fraction
+    notes: >
+      Inner radius of the analog stick deadzone. Raw stick magnitudes
+      below this value are treated as zero; above this value, magnitudes
+      are renormalized to [0.0, 1.0] via the D.3 stick_deadzone_normalization
+      formula. Matches SDL3 default in Godot 4.5+. Safe range [0.05, 0.20]
+      at MVP/VS; Accessibility #43 may bump ceiling to 0.30 at Alpha for
+      severe hardware drift accommodation (Q5 in Input GDD Open Questions).
+      Player-configurable via Settings #42 when authored. Encoded directly
+      via Input.get_vector(...)'s deadzone parameter in Godot 4.x.
+      Input GDD Section D.3 and Section G.
+    added: 2026-05-16
+    revised: ""
+
+  - name: cam_shake_max_amplitude_px
+    status: active
+    source: design/gdd/camera-system.md
+    referenced_by:
+      - design/gdd/camera-system.md          # D.7 (trauma accumulation), D.9 (shake offset) — definition; G.1, G.4; H AC-CAM-09/-11/-17/-18
+      # Juice / Feedback Pipeline (#9) authors per-event amplitudes in
+      # JuiceProfile.tres that must not exceed this cap. Append when authored.
+    value: 12
+    unit: pixels
+    notes: >
+      Maximum shake displacement applied to Camera2D.offset in world-space
+      pixels. Also serves as the normalization denominator in the trauma
+      accumulation formula (D.7): each event's amplitude_px is divided by
+      this value to compute its trauma increment, ensuring trauma stays
+      in [0, 1]. Per-event amplitudes authored in JuiceProfile.tres by
+      Juice/Feedback Pipeline (#9) must stay at or below this value.
+      Default MVP values: kill=3px (0.25 trauma), crit=5px (0.417 trauma),
+      boss kill=8px (0.667 trauma). Reduce Motion accessibility halving
+      applies to the per-event amplitudes in JuiceProfile, not to this cap.
+      Camera GDD Section D.7, D.9, and Section G.
+    added: 2026-05-16
+    revised: ""
+
+  - name: cam_follow_speed
+    status: active
+    source: design/gdd/camera-system.md
+    referenced_by:
+      - design/gdd/camera-system.md          # C.Rule 4, D.3, G.1; H AC-CAM-03
+      # Settings (#42) will surface as player slider at VS milestone per
+      # Camera GDD Open Question #2; append when authored.
+      # Player Controller (#14) will care about feel-coupling between
+      # movement input responsiveness and camera follow latency; append
+      # when authored.
+    value: 10.0
+    unit: per_second
+    notes: >
+      `Camera2D.position_smoothing_speed` coefficient. Controls the
+      Y-axis follow latency on the Champion. Half-life formula per D.3:
+      `cam_tracking_half_life_s = ln(2) / cam_follow_speed`. At default
+      10.0, half-life ≈ 69 ms (formula) / ~63 ms (Godot's discrete
+      Euler integration). Safe range [0.1, 100.0]; below 2.0 the camera
+      drags noticeably; above 30.0 it snaps on every micro-input. Player-
+      tunable candidate at VS via Settings #42 (Camera GDD Open Q #2).
+      Camera GDD Section C Rule 4, D.3, G.1.
+    added: 2026-05-23
+    revised: ""
+
+  - name: reduce_motion_amplitude_multiplier
+    status: active
+    source: design/gdd/camera-system.md
+    referenced_by:
+      - design/gdd/camera-system.md          # C Rule 7 parenthetical, G.1 row
+      # Juice / Feedback Pipeline (#9) applies this multiplier to per-event
+      # amplitude_px BEFORE calling Camera.shake(). Append when authored.
+      # Accessibility (#43) owns the UI toggle that flips between the
+      # discrete values; append when authored at Alpha.
+    value: 0.5
+    unit: multiplier
+    notes: >
+      Discrete-set multiplier {0.0, 0.5, 1.0}: 1.0 = Reduce Motion OFF
+      (default), 0.5 = Reduce Motion ON (default-when-on), 0.0 = shake
+      fully disabled (player-toggled accessibility option only — must
+      NOT be silently forced). Applied by Juice #9 to per-event
+      amplitude_px before the call to Camera.shake(); Camera sees the
+      smaller amplitude and treats it normally — Camera itself does NOT
+      apply this multiplier. Default value listed here (0.5) reflects
+      the default-when-Reduce-Motion-is-on choice; the cross-system
+      consensus on this default is owned by Accessibility #43 at Alpha
+      (Camera GDD Open Q #3). Camera GDD Section C Rule 7, G.1.
+    added: 2026-05-23
     revised: ""
