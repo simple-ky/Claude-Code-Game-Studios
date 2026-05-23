@@ -107,6 +107,39 @@ This rule applies to all skills, all agents, all closing widgets, **and
 all in-chat communication where the user must understand something in
 order to act on it**.
 
+#### Required `AskUserQuestion` widget format (enforced by hook, added 2026-05-23)
+
+Every option's `description` field in an `AskUserQuestion` widget MUST contain
+BOTH of these markers, or the call is hard-blocked by
+`.claude/hooks/validate-ask-user-question.sh`:
+
+1. **Plain-English marker** — one of:
+   - `What you'll experience` / `What you will experience`
+   - `The player sees / hears / feels / will / can / won't`
+2. **Technical marker** — the word `Technical` (typically as a `**Technical:**`
+   subsection containing the jargon, file paths, ADR IDs, or variable names)
+
+**Canonical option format:**
+
+```markdown
+**What you'll experience:** <plain-English description — what the player
+sees, hears, feels, or what changes visibly. "The player sees nothing —
+this is bookkeeping" is a valid and honest description.>
+
+**Technical:** <jargon, file paths, ADR IDs, variable names,
+signal-contract terms — the audit-trail layer.>
+```
+
+**Why both, always, in every option:** This preserves the user's plain-English
+understanding (so they can decide correctly) AND keeps the technical
+translation in the widget itself (so downstream agents, session logs, and audit
+trails don't lose it). The widget becomes the audit record — no separate
+"round-trip translation" step required.
+
+**If the hook blocks a widget**, the error message names which options are
+missing which marker. Rewrite those options in the dual-content format and
+retry the call.
+
 **Example pairs (anti-pattern → corrected):**
 
 - ❌ "Approve Section F (Dependencies)? Maps upstream (engine + 1 system + 4 ADRs)…"
