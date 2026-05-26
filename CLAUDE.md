@@ -107,10 +107,10 @@ This rule applies to all skills, all agents, all closing widgets, **and
 all in-chat communication where the user must understand something in
 order to act on it**.
 
-#### Required `AskUserQuestion` widget format (enforced by hook, added 2026-05-23)
+#### Required `AskUserQuestion` widget format (enforced by hook, added 2026-05-23, tightened 2026-05-26)
 
-Every option's `description` field in an `AskUserQuestion` widget MUST contain
-BOTH of these markers, or the call is hard-blocked by
+Every option's `description` field in an `AskUserQuestion` widget MUST satisfy
+ALL of the rules below, or the call is hard-blocked by
 `.claude/hooks/validate-ask-user-question.sh`:
 
 1. **Plain-English marker** — one of:
@@ -118,16 +118,40 @@ BOTH of these markers, or the call is hard-blocked by
    - `The player sees / hears / feels / will / can / won't`
 2. **Technical marker** — the word `Technical` (typically as a `**Technical:**`
    subsection containing the jargon, file paths, ADR IDs, or variable names)
+3. **Order** — the plain-English marker must appear BEFORE the Technical
+   marker. The user reads the plain version first; the technical block is
+   the audit-trail footer, not the explanation.
+4. **Plain section ≤ 40 words** (after stripping `**` markdown). If you can't
+   say it in 40 plain words, the option is doing two jobs — split it or
+   rethink it.
+5. **Whole description ≤ 100 words.** Tight, scannable options. Long options
+   were the #1 user complaint that drove this rule update.
+6. **The plain section must be JARGON-FREE.** The hook blocks any of the
+   following inside the plain section:
+   - `snake_case` identifiers (e.g. `process_mode`, `tk_prep_floor`)
+   - `PascalCase` class-style names with ≥2 capital-word transitions
+     (e.g. `AudioStreamPlayer`, `PlayerController`). Single-word
+     capitalization like "Save" / "Continue" / "Main Menu" is fine.
+   - `ALL_CAPS_CONSTANT` style identifiers
+   - ID references — `ADR-0004`, `TR-0042`, `AC-LM-17`, `FR-3`, `NFR-1`
+   - File extensions / paths — `.gd`, `.cs`, `.tscn`, `.tres`, `.md`,
+     `design/gdd/foo`
+   - Backtick-wrapped code — `` `anything` ``
+   - Function-call syntax — `foo()`, `take_damage()`
+   - Code syntax tokens — `->`, `::`
+
+   The Technical section is exempt — it is *expected* to contain all of
+   the above. The jargon ban applies only to the plain section.
 
 **Canonical option format:**
 
 ```markdown
-**What you'll experience:** <plain-English description — what the player
-sees, hears, feels, or what changes visibly. "The player sees nothing —
-this is bookkeeping" is a valid and honest description.>
+**What you'll experience:** <short, jargon-free sentence about what the
+user/player sees, hears, feels, or does. Plain words only. "The player
+sees nothing — this is bookkeeping" is a valid and honest description.>
 
 **Technical:** <jargon, file paths, ADR IDs, variable names,
-signal-contract terms — the audit-trail layer.>
+signal-contract terms — the audit-trail layer. Keep it short.>
 ```
 
 **Why both, always, in every option:** This preserves the user's plain-English
@@ -136,9 +160,14 @@ translation in the widget itself (so downstream agents, session logs, and audit
 trails don't lose it). The widget becomes the audit record — no separate
 "round-trip translation" step required.
 
-**If the hook blocks a widget**, the error message names which options are
-missing which marker. Rewrite those options in the dual-content format and
-retry the call.
+**Drafting tip:** if you keep hitting jargon flags, you are probably writing
+the technical answer first and translating to plain English second. Write the
+plain version FIRST as if explaining to a friend who has never seen the code;
+then add the technical footer.
+
+**If the hook blocks a widget**, the error message names exactly which option,
+which rule, and (for jargon) which specific tokens were flagged. Rewrite those
+options and retry the call.
 
 **Example pairs (anti-pattern → corrected):**
 
